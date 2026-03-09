@@ -168,6 +168,9 @@ export function renderPreview({
 			effectParams: resolvedParams,
 			width: size,
 			height: size,
+			localTime: 0,
+			duration: 1,
+			progress: 1,
 		}),
 	}));
 	const result = applyWebGlEffect({

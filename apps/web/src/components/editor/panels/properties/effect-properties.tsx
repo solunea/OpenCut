@@ -7,10 +7,9 @@ import {
 	Section,
 	SectionContent,
 	SectionHeader,
-	SectionFields,
 	SectionTitle,
 } from "./section";
-import { EffectParamField } from "./effect-param-field";
+import { EffectFields } from "./effect-fields";
 
 export function EffectProperties({
 	element,
@@ -23,7 +22,7 @@ export function EffectProperties({
 	const definition = getEffect({ effectType: element.effectType });
 
 	const previewParam =
-		({ key }: { key: string }) =>
+		(key: string) =>
 		(value: number | string | boolean) =>
 			editor.timeline.previewElements({
 				updates: [
@@ -35,23 +34,31 @@ export function EffectProperties({
 				],
 			});
 
+	const previewParams = (params: Record<string, number | string | boolean>) =>
+		editor.timeline.previewElements({
+			updates: [
+				{
+					trackId,
+					elementId: element.id,
+					updates: { params: { ...element.params, ...params } },
+				},
+			],
+		});
+
 	return (
 		<Section showTopBorder={false}>
 			<SectionHeader>
 				<SectionTitle>{definition.name}</SectionTitle>
 			</SectionHeader>
 			<SectionContent>
-				<SectionFields>
-					{definition.params.map((param) => (
-						<EffectParamField
-							key={param.key}
-							param={param}
-							value={element.params[param.key] ?? param.default}
-							onPreview={previewParam({ key: param.key })}
-							onCommit={() => editor.timeline.commitPreview()}
-						/>
-					))}
-				</SectionFields>
+				<EffectFields
+					effectType={element.effectType}
+					definition={definition}
+					values={element.params}
+					onPreviewParam={previewParam}
+					onPreviewParams={previewParams}
+					onCommit={() => editor.timeline.commitPreview()}
+				/>
 			</SectionContent>
 		</Section>
 	);

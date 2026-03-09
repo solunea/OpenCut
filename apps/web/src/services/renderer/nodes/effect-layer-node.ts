@@ -47,6 +47,12 @@ export class EffectLayerNode extends BaseNode<EffectLayerNodeParams> {
 			return;
 		}
 
+		const localTime = Math.max(0, time - this.params.timeOffset);
+		const progress =
+			this.params.duration <= 0
+				? 1
+				: Math.min(localTime / this.params.duration, 1);
+
 		const source = renderer.context.canvas as CanvasImageSource;
 
 		const effectDefinition = getEffect({
@@ -59,6 +65,9 @@ export class EffectLayerNode extends BaseNode<EffectLayerNodeParams> {
 				effectParams: this.params.effectParams,
 				width: renderer.width,
 				height: renderer.height,
+				localTime,
+				duration: this.params.duration,
+				progress,
 			}),
 		}));
 		const effectResult = webglEffectRenderer.applyEffect({

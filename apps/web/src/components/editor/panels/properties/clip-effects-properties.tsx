@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 import type { Effect } from "@/types/effects";
 import type { VisualElement } from "@/types/timeline";
 import { getEffect } from "@/lib/effects/registry";
@@ -11,9 +11,8 @@ import {
 	SectionContent,
 	SectionHeader,
 	SectionTitle,
-	SectionFields,
 } from "./section";
-import { EffectParamField } from "./effect-param-field";
+import { EffectFields } from "./effect-fields";
 import { Button } from "@/components/ui/button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -48,7 +47,7 @@ export function ClipEffectsProperties({
 		setDragIndex(index);
 	};
 
-	const handleDragOver = ({ event, index }: { event: React.DragEvent; index: number }) => {
+	const handleDragOver = ({ event, index }: { event: DragEvent; index: number }) => {
 		event.preventDefault();
 		if (index !== dropIndex) setDropIndex(index);
 	};
@@ -90,9 +89,9 @@ export function ClipEffectsProperties({
 					<div
 						key={effect.id}
 						draggable
-					onDragStart={() => handleDragStart({ index })}
-					onDragOver={(event) => handleDragOver({ event, index })}
-					onDrop={() => handleDrop({ toIndex: index })}
+						onDragStart={() => handleDragStart({ index })}
+						onDragOver={(event) => handleDragOver({ event, index })}
+						onDrop={() => handleDrop({ toIndex: index })}
 						onDragEnd={handleDragEnd}
 						className={cn(
 							"group",
@@ -129,11 +128,28 @@ function ClipEffectSection({
 	const editor = useEditor();
 	const definition = getEffect({ effectType: effect.type });
 
-	const previewParam = ({ key }: { key: string }) => (value: number | string | boolean) => {
+	const previewParam = (key: string) => (value: number | string | boolean) => {
 		const updatedEffects = (element.effects ?? []).map((existing) =>
 			existing.id !== effect.id
 				? existing
 				: { ...existing, params: { ...existing.params, [key]: value } },
+		);
+		editor.timeline.previewElements({
+			updates: [
+				{
+					trackId,
+					elementId: element.id,
+					updates: { effects: updatedEffects },
+				},
+			],
+		});
+	};
+
+	const previewParams = (params: Record<string, number | string | boolean>) => {
+		const updatedEffects = (element.effects ?? []).map((existing) =>
+			existing.id !== effect.id
+				? existing
+				: { ...existing, params: { ...existing.params, ...params } },
 		);
 		editor.timeline.previewElements({
 			updates: [
@@ -197,17 +213,14 @@ function ClipEffectSection({
 			</SectionHeader>
 			{effect.enabled && (
 				<SectionContent>
-					<SectionFields>
-						{definition.params.map((param) => (
-							<EffectParamField
-								key={param.key}
-								param={param}
-								value={effect.params[param.key] ?? param.default}
-								onPreview={previewParam({ key: param.key })}
-								onCommit={commitParam}
-							/>
-						))}
-					</SectionFields>
+					<EffectFields
+						effectType={effect.type}
+						definition={definition}
+						values={effect.params}
+						onPreviewParam={previewParam}
+						onPreviewParams={previewParams}
+						onCommit={commitParam}
+					/>
 				</SectionContent>
 			)}
 		</Section>

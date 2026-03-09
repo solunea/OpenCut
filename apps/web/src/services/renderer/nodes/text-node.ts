@@ -294,6 +294,8 @@ export class TextNode extends BaseNode<TextNodeParams> {
 				animations: this.params.animations,
 				localTime,
 			});
+			const progress =
+				this.params.duration <= 0 ? 1 : Math.min(localTime / this.params.duration, 1);
 			const definition = getEffect({ effectType: effect.type });
 			const passes = definition.renderer.passes.map((pass) => ({
 				fragmentShader: pass.fragmentShader,
@@ -301,6 +303,9 @@ export class TextNode extends BaseNode<TextNodeParams> {
 					effectParams: resolvedParams,
 					width: renderer.width,
 					height: renderer.height,
+					localTime,
+					duration: this.params.duration,
+					progress,
 				}),
 			}));
 			currentSource = webglEffectRenderer.applyEffect({

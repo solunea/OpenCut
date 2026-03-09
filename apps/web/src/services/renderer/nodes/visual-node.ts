@@ -133,6 +133,10 @@ export abstract class VisualNode<
 				animations: this.params.animations,
 				localTime: animationLocalTime,
 			});
+			const progress =
+				this.params.duration <= 0
+					? 1
+					: Math.min(animationLocalTime / this.params.duration, 1);
 			const definition = getEffect({ effectType: effect.type });
 			const passes = definition.renderer.passes.map((pass) => ({
 				fragmentShader: pass.fragmentShader,
@@ -140,6 +144,9 @@ export abstract class VisualNode<
 					effectParams: resolvedParams,
 					width: scaledWidth,
 					height: scaledHeight,
+					localTime: animationLocalTime,
+					duration: this.params.duration,
+					progress,
 				}),
 			}));
 			currentResult = webglEffectRenderer.applyEffect({
