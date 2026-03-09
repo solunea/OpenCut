@@ -105,7 +105,7 @@ function ZoomFocusField({
 	const previewFocus = useCallback(
 		({ x, y }: { x: number; y: number }) => {
 			onPreviewFocus({
-				focusX: Math.round(clamp({ value: 100 - x, min: 0, max: 100 })),
+				focusX: Math.round(clamp({ value: x, min: 0, max: 100 })),
 				focusY: Math.round(clamp({ value: 100 - y, min: 0, max: 100 })),
 			});
 		},
@@ -207,7 +207,7 @@ function ZoomFocusField({
 					<div
 						className="absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-sm"
 						style={{
-							left: `${100 - focusX}%`,
+							left: `${focusX}%`,
 							top: `${100 - focusY}%`,
 						}}
 					/>

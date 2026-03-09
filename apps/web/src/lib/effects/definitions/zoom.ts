@@ -19,14 +19,19 @@ function clamp01(value: number): number {
 	return Math.min(Math.max(value, 0), 1);
 }
 
-function easeOutCubic(value: number): number {
+function easeInOutSine(value: number): number {
 	const t = clamp01(value);
-	return 1 - (1 - t) * (1 - t) * (1 - t);
+	return -(Math.cos(Math.PI * t) - 1) / 2;
 }
 
-function easeInCubic(value: number): number {
+function easeOutSine(value: number): number {
 	const t = clamp01(value);
-	return t * t * t;
+	return Math.sin((t * Math.PI) / 2);
+	}
+
+function easeInSine(value: number): number {
+	const t = clamp01(value);
+	return 1 - Math.cos((t * Math.PI) / 2);
 }
 
 function resolveStrength({
@@ -44,17 +49,22 @@ function resolveStrength({
 	const easeOutStart = 1 - easeOut;
 
 	if (easeIn > 0 && normalizedProgress < easeIn) {
-		return easeOutCubic(normalizedProgress / easeIn);
+		return easeInOutSine(easeOutSine(normalizedProgress / easeIn));
 	}
 
 	if (easeOut > 0 && normalizedProgress > easeOutStart) {
-		return easeInCubic((1 - normalizedProgress) / easeOut);
+		return easeInOutSine(easeInSine((1 - normalizedProgress) / easeOut));
 	}
 
 	if (easeIn > easeOutStart) {
-		const enter = easeIn > 0 ? easeOutCubic(normalizedProgress / easeIn) : 1;
+		const enter =
+			easeIn > 0
+				? easeInOutSine(easeOutSine(normalizedProgress / easeIn))
+				: 1;
 		const exit =
-			easeOut > 0 ? easeInCubic((1 - normalizedProgress) / easeOut) : 1;
+			easeOut > 0
+				? easeInOutSine(easeInSine((1 - normalizedProgress) / easeOut))
+				: 1;
 		return Math.min(enter, exit);
 	}
 
