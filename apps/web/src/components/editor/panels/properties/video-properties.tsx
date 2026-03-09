@@ -3,7 +3,7 @@ import type {
 	StickerElement,
 	VideoElement,
 } from "@/types/timeline";
-import { BlendingSection, TransformSection } from "./sections";
+import { BlendingSection, TransformSection, VideoStyleSection } from "./sections";
 
 export function VideoProperties({
 	element,
@@ -19,6 +19,9 @@ export function VideoProperties({
 				trackId={trackId}
 				showTopBorder={false}
 			/>
+			{element.type === "video" && (
+				<VideoStyleSection element={element} trackId={trackId} />
+			)}
 			<BlendingSection element={element} trackId={trackId} />
 		</div>
 	);

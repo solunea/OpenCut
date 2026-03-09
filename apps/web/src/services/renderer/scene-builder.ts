@@ -3,6 +3,7 @@ import type { MediaAsset } from "@/types/assets";
 import { RootNode } from "./nodes/root-node";
 import { VideoNode } from "./nodes/video-node";
 import { ImageNode } from "./nodes/image-node";
+import { BackgroundImageNode } from "./nodes/background-image-node";
 import { TextNode } from "./nodes/text-node";
 import { StickerNode } from "./nodes/sticker-node";
 import { ColorNode } from "./nodes/color-node";
@@ -66,20 +67,23 @@ function buildTrackNodes({
 				}
 
 				if (mediaAsset.type === "video") {
+					const videoElement = element;
 					nodes.push(
 						new VideoNode({
 							mediaId: mediaAsset.id,
 							url: mediaAsset.url,
 							file: mediaAsset.file,
-							duration: element.duration,
-							timeOffset: element.startTime,
-							trimStart: element.trimStart,
-							trimEnd: element.trimEnd,
-							transform: element.transform,
-							animations: element.animations,
-							opacity: element.opacity,
-							blendMode: element.blendMode,
-							effects: element.effects,
+							duration: videoElement.duration,
+							timeOffset: videoElement.startTime,
+							trimStart: videoElement.trimStart,
+							trimEnd: videoElement.trimEnd,
+							transform: videoElement.transform,
+							animations: videoElement.animations,
+							opacity: videoElement.opacity,
+							blendMode: videoElement.blendMode,
+							frameStyle:
+								videoElement.type === "video" ? videoElement.frame : undefined,
+							effects: videoElement.effects,
 						}),
 					);
 				}
@@ -190,6 +194,13 @@ export function buildScene({
 				scale: BLUR_BACKGROUND_ZOOM_SCALE,
 			}),
 		);
+	} else if (background.type === "image") {
+		const backgroundAsset = background.mediaId
+			? mediaMap.get(background.mediaId)
+			: undefined;
+		if (backgroundAsset?.type === "image" && backgroundAsset.url) {
+			rootNode.add(new BackgroundImageNode({ url: backgroundAsset.url }));
+		}
 	} else if (background.type === "color" && background.color !== "transparent") {
 		rootNode.add(new ColorNode({ color: background.color }));
 	}

@@ -8,6 +8,10 @@ export type TBackground =
 	| {
 			type: "blur";
 			blurIntensity: number;
+	  }
+	| {
+			type: "image";
+			mediaId?: string | null;
 	  };
 
 export interface TCanvasSize {

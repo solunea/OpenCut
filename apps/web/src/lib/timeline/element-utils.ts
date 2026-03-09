@@ -260,6 +260,14 @@ export function buildVideoElement({
 		transform: { ...DEFAULT_TRANSFORM },
 		opacity: DEFAULT_OPACITY,
 		blendMode: DEFAULT_BLEND_MODE,
+		frame: {
+			cornerRadius: 0,
+			shadowBlur: 0,
+			shadowOffsetX: 0,
+			shadowOffsetY: 0,
+			shadowOpacity: 35,
+			shadowColor: "rgba(0, 0, 0, 0.35)",
+		},
 	};
 }
 

@@ -18,7 +18,7 @@ export class MediaManager {
 	}: {
 		projectId: string;
 		asset: Omit<MediaAsset, "id">;
-	}): Promise<void> {
+	}): Promise<MediaAsset | null> {
 		const newAsset: MediaAsset = {
 			...asset,
 			id: generateUUID(),
@@ -29,10 +29,12 @@ export class MediaManager {
 
 		try {
 			await storageService.saveMediaAsset({ projectId, mediaAsset: newAsset });
+			return newAsset;
 		} catch (error) {
 			console.error("Failed to save media asset:", error);
 			this.assets = this.assets.filter((asset) => asset.id !== newAsset.id);
 			this.notify();
+			return null;
 		}
 	}
 

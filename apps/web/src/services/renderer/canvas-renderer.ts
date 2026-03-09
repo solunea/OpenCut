@@ -57,8 +57,7 @@ export class CanvasRenderer {
 	}
 
 	private clear() {
-		this.context.fillStyle = "black";
-		this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+		this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
 	}
 
 	async render({ node, time }: { node: BaseNode; time: number }) {
@@ -82,6 +81,7 @@ export class CanvasRenderer {
 			throw new Error("Failed to get target canvas context");
 		}
 
+		ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
 		ctx.drawImage(this.canvas, 0, 0, targetCanvas.width, targetCanvas.height);
 	}
 }

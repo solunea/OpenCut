@@ -189,7 +189,8 @@ function PreviewCanvas({
 								width: displaySize.width,
 								height: displaySize.height,
 								background:
-									activeProject.settings.background.type === "blur"
+									activeProject.settings.background.type === "blur" ||
+									activeProject.settings.background.type === "image"
 										? "transparent"
 										: activeProject?.settings.background.color,
 							}}

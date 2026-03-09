@@ -27,7 +27,9 @@ export default function RootLayout({
 	return (
 		<html lang="en" suppressHydrationWarning>
 			<head>
-				<BotIdClient protect={protectedRoutes} />
+				{webEnv.NODE_ENV === "production" && (
+					<BotIdClient protect={protectedRoutes} />
+				)}
 				{process.env.NODE_ENV === "development" && (
 					<Script
 						src="//unpkg.com/react-scan/dist/auto.global.js"

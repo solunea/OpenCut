@@ -3,7 +3,7 @@ import { createOffscreenCanvas } from "../canvas-utils";
 import { BaseNode } from "./base-node";
 import type { Effect } from "@/types/effects";
 import type { BlendMode } from "@/types/rendering";
-import type { Transform } from "@/types/timeline";
+import type { Transform, VideoFrameStyle } from "@/types/timeline";
 import type { ElementAnimations } from "@/types/animation";
 import {
 	getElementLocalTime,
@@ -15,6 +15,83 @@ import { TIME_EPSILON_SECONDS } from "@/constants/animation-constants";
 import { getEffect } from "@/lib/effects";
 import { webglEffectRenderer } from "../webgl-effect-renderer";
 
+type RenderableContext =
+	| CanvasRenderingContext2D
+	| OffscreenCanvasRenderingContext2D;
+
+const DEFAULT_FRAME_STYLE: Required<VideoFrameStyle> = {
+	cornerRadius: 0,
+	shadowBlur: 0,
+	shadowOffsetX: 0,
+	shadowOffsetY: 0,
+	shadowOpacity: 35,
+	shadowColor: "rgba(0, 0, 0, 0.35)",
+};
+
+function colorWithOpacity({
+	color,
+	opacity,
+}: {
+	color: string;
+	opacity: number;
+}): string {
+	const normalizedOpacity = Math.min(Math.max(opacity, 0), 100) / 100;
+	if (color.startsWith("rgba(")) {
+		const parts = color.slice(5, -1).split(",").map((part) => part.trim());
+		if (parts.length >= 3) {
+			return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${normalizedOpacity})`;
+		}
+	}
+	if (color.startsWith("rgb(")) {
+		const parts = color.slice(4, -1).split(",").map((part) => part.trim());
+		if (parts.length >= 3) {
+			return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${normalizedOpacity})`;
+		}
+	}
+	return color;
+}
+
+function resolveFrameStyle(frameStyle?: VideoFrameStyle): Required<VideoFrameStyle> {
+	return {
+		cornerRadius: frameStyle?.cornerRadius ?? DEFAULT_FRAME_STYLE.cornerRadius,
+		shadowBlur: frameStyle?.shadowBlur ?? DEFAULT_FRAME_STYLE.shadowBlur,
+		shadowOffsetX: frameStyle?.shadowOffsetX ?? DEFAULT_FRAME_STYLE.shadowOffsetX,
+		shadowOffsetY: frameStyle?.shadowOffsetY ?? DEFAULT_FRAME_STYLE.shadowOffsetY,
+		shadowOpacity: frameStyle?.shadowOpacity ?? DEFAULT_FRAME_STYLE.shadowOpacity,
+		shadowColor: frameStyle?.shadowColor ?? DEFAULT_FRAME_STYLE.shadowColor,
+	};
+}
+
+function applyRoundedMask({
+	source,
+	width,
+	height,
+	cornerRadius,
+}: {
+	source: CanvasImageSource;
+	width: number;
+	height: number;
+	cornerRadius: number;
+}): CanvasImageSource {
+	if (cornerRadius <= 0) {
+		return source;
+	}
+
+	const maskedCanvas = createOffscreenCanvas({ width, height });
+	const maskedCtx = maskedCanvas.getContext("2d") as RenderableContext | null;
+	if (!maskedCtx) {
+		return source;
+	}
+
+	const percent = Math.min(Math.max(cornerRadius, 0), 100) / 100;
+	const radius = Math.min(width, height) * 0.5 * percent;
+	maskedCtx.beginPath();
+	maskedCtx.roundRect(0, 0, width, height, radius);
+	maskedCtx.clip();
+	maskedCtx.drawImage(source, 0, 0, width, height);
+	return maskedCanvas;
+}
+
 export interface VisualNodeParams {
 	duration: number;
 	timeOffset: number;
@@ -24,6 +101,7 @@ export interface VisualNodeParams {
 	animations?: ElementAnimations;
 	opacity: number;
 	blendMode?: BlendMode;
+	frameStyle?: VideoFrameStyle;
 	effects?: Effect[];
 }
 
@@ -82,8 +160,16 @@ export abstract class VisualNode<
 		);
 		const scaledWidth = sourceWidth * containScale * transform.scale;
 		const scaledHeight = sourceHeight * containScale * transform.scale;
+		const pixelWidth = Math.max(1, Math.round(scaledWidth));
+		const pixelHeight = Math.max(1, Math.round(scaledHeight));
 		const x = renderer.width / 2 + transform.position.x - scaledWidth / 2;
 		const y = renderer.height / 2 + transform.position.y - scaledHeight / 2;
+		const frameStyle = resolveFrameStyle(this.params.frameStyle);
+		const hasRoundedCorners = frameStyle.cornerRadius > 0;
+		const hasShadow =
+			frameStyle.shadowBlur > 0 ||
+			frameStyle.shadowOffsetX !== 0 ||
+			frameStyle.shadowOffsetY !== 0;
 
 		renderer.context.globalCompositeOperation = (
 			this.params.blendMode && this.params.blendMode !== "normal"
@@ -103,27 +189,24 @@ export abstract class VisualNode<
 		const enabledEffects =
 			this.params.effects?.filter((effect) => effect.enabled) ?? [];
 
-		if (enabledEffects.length === 0) {
+		if (!hasRoundedCorners && !hasShadow && enabledEffects.length === 0) {
 			renderer.context.drawImage(source, x, y, scaledWidth, scaledHeight);
 			renderer.context.restore();
 			return;
 		}
 
 		const elementCanvas = createOffscreenCanvas({
-			width: Math.round(scaledWidth),
-			height: Math.round(scaledHeight),
+			width: pixelWidth,
+			height: pixelHeight,
 		});
-		const elementCtx = elementCanvas.getContext("2d") as
-			| CanvasRenderingContext2D
-			| OffscreenCanvasRenderingContext2D
-			| null;
+		const elementCtx = elementCanvas.getContext("2d") as RenderableContext | null;
 		if (!elementCtx) {
 			renderer.context.drawImage(source, x, y, scaledWidth, scaledHeight);
 			renderer.context.restore();
 			return;
 		}
 
-		elementCtx.drawImage(source, 0, 0, scaledWidth, scaledHeight);
+		elementCtx.drawImage(source, 0, 0, pixelWidth, pixelHeight);
 
 		let currentResult: CanvasImageSource = elementCanvas;
 
@@ -142,8 +225,8 @@ export abstract class VisualNode<
 				fragmentShader: pass.fragmentShader,
 				uniforms: pass.uniforms({
 					effectParams: resolvedParams,
-					width: scaledWidth,
-					height: scaledHeight,
+					width: pixelWidth,
+					height: pixelHeight,
 					localTime: animationLocalTime,
 					duration: this.params.duration,
 					progress,
@@ -151,14 +234,31 @@ export abstract class VisualNode<
 			}));
 			currentResult = webglEffectRenderer.applyEffect({
 				source: currentResult,
-				width: Math.round(scaledWidth),
-				height: Math.round(scaledHeight),
+				width: pixelWidth,
+				height: pixelHeight,
 				passes,
 			});
 		}
 
+		const finalResult = applyRoundedMask({
+			source: currentResult,
+			width: pixelWidth,
+			height: pixelHeight,
+			cornerRadius: frameStyle.cornerRadius,
+		});
+
+		renderer.context.shadowColor = hasShadow
+			? colorWithOpacity({
+					color: frameStyle.shadowColor,
+					opacity: frameStyle.shadowOpacity,
+				})
+			: "transparent";
+		renderer.context.shadowBlur = hasShadow ? frameStyle.shadowBlur : 0;
+		renderer.context.shadowOffsetX = hasShadow ? frameStyle.shadowOffsetX : 0;
+		renderer.context.shadowOffsetY = hasShadow ? frameStyle.shadowOffsetY : 0;
+
 		renderer.context.drawImage(
-			currentResult,
+			finalResult,
 			x,
 			y,
 			scaledWidth,

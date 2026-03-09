@@ -97,6 +97,15 @@ interface BaseTimelineElement {
 	animations?: ElementAnimations;
 }
 
+export interface VideoFrameStyle {
+	cornerRadius?: number;
+	shadowBlur?: number;
+	shadowOffsetX?: number;
+	shadowOffsetY?: number;
+	shadowOpacity?: number;
+	shadowColor?: string;
+}
+
 export interface VideoElement extends BaseTimelineElement {
 	type: "video";
 	mediaId: string;
@@ -105,6 +114,7 @@ export interface VideoElement extends BaseTimelineElement {
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
+	frame?: VideoFrameStyle;
 	effects?: Effect[];
 }
 
