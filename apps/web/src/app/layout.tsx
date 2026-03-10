@@ -5,7 +5,6 @@ import { Toaster } from "../components/ui/sonner";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { baseMetaData } from "./metadata";
 import { BotIdClient } from "botid/client";
-import { webEnv } from "@opencut/env/web";
 import { Inter } from "next/font/google";
 
 const siteFont = Inter({ subsets: ["latin"] });
@@ -24,13 +23,16 @@ export default function RootLayout({
 }: Readonly<{
 	children: React.ReactNode;
 }>) {
+	const isProduction = process.env.NODE_ENV === "production";
+	const isDevelopment = process.env.NODE_ENV === "development";
+
 	return (
 		<html lang="en" suppressHydrationWarning>
 			<head>
-				{webEnv.NODE_ENV === "production" && (
+				{isProduction && (
 					<BotIdClient protect={protectedRoutes} />
 				)}
-				{process.env.NODE_ENV === "development" && (
+				{isDevelopment && (
 					<Script
 						src="//unpkg.com/react-scan/dist/auto.global.js"
 						crossOrigin="anonymous"
@@ -51,7 +53,7 @@ export default function RootLayout({
 							strategy="afterInteractive"
 							async
 							data-client-id="UP-Wcoy5arxFeK7oyjMMZ"
-							data-disabled={webEnv.NODE_ENV === "development"}
+							data-disabled={isDevelopment}
 							data-track-attributes={false}
 							data-track-errors={true}
 							data-track-outgoing-links={false}
