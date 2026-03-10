@@ -584,6 +584,7 @@ function ProjectItem({
 							alt="Project thumbnail"
 							fill
 							className="object-cover"
+							unoptimized
 						/>
 					) : (
 						<div className="flex size-full items-center justify-center">
@@ -620,6 +621,7 @@ function ProjectItem({
 						alt="Project thumbnail"
 						fill
 						className="object-cover"
+						unoptimized
 					/>
 				) : (
 					<div className="flex size-full items-center justify-center">
