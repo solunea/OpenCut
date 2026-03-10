@@ -1,9 +1,8 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { createOffscreenCanvas } from "../canvas-utils";
-import { getEffect } from "@/lib/effects";
 import type { EffectParamValues } from "@/types/effects";
 import { BaseNode } from "./base-node";
-import { webglEffectRenderer } from "../webgl-effect-renderer";
+import { applyRendererEffect } from "../effect-applier";
 
 export type CompositeEffectNodeParams = {
 	contentNodes: BaseNode[];
@@ -38,29 +37,21 @@ export class CompositeEffectNode extends BaseNode<CompositeEffectNodeParams> {
 
 		renderer.context = originalContext;
 
-		const effectDefinition = getEffect({ effectType: this.params.effectType });
 		const scale = this.params.scale;
 		const scaledWidth = renderer.width * scale;
 		const scaledHeight = renderer.height * scale;
 		const offsetX = (renderer.width - scaledWidth) / 2;
 		const offsetY = (renderer.height - scaledHeight) / 2;
 
-		const passes = effectDefinition.renderer.passes.map((pass) => ({
-			fragmentShader: pass.fragmentShader,
-			uniforms: pass.uniforms({
-				effectParams: this.params.effectParams,
-				width: renderer.width,
-				height: renderer.height,
-				localTime: time,
-				duration: 1,
-				progress: 1,
-			}),
-		}));
-		const effectResult = webglEffectRenderer.applyEffect({
+		const effectResult = applyRendererEffect({
 			source: offscreen as CanvasImageSource,
 			width: renderer.width,
 			height: renderer.height,
-			passes,
+			effectType: this.params.effectType,
+			effectParams: this.params.effectParams,
+			localTime: time,
+			duration: 1,
+			progress: 1,
 		});
 
 		renderer.context.save();

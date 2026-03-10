@@ -16,8 +16,7 @@ import {
 } from "@/lib/timeline/clip-speed";
 import { resolveEffectParamsAtTime } from "@/lib/animation/effect-param-channel";
 import { TIME_EPSILON_SECONDS } from "@/constants/animation-constants";
-import { getEffect } from "@/lib/effects";
-import { webglEffectRenderer } from "../webgl-effect-renderer";
+import { applyRendererEffect } from "../effect-applier";
 
 type RenderableContext =
 	| CanvasRenderingContext2D
@@ -234,23 +233,15 @@ export abstract class VisualNode<
 				this.params.duration <= 0
 					? 1
 					: Math.min(animationLocalTime / this.params.duration, 1);
-			const definition = getEffect({ effectType: effect.type });
-			const passes = definition.renderer.passes.map((pass) => ({
-				fragmentShader: pass.fragmentShader,
-				uniforms: pass.uniforms({
-					effectParams: resolvedParams,
-					width: pixelWidth,
-					height: pixelHeight,
-					localTime: animationLocalTime,
-					duration: this.params.duration,
-					progress,
-				}),
-			}));
-			currentResult = webglEffectRenderer.applyEffect({
+			currentResult = applyRendererEffect({
 				source: currentResult,
 				width: pixelWidth,
 				height: pixelHeight,
-				passes,
+				effectType: effect.type,
+				effectParams: resolvedParams,
+				localTime: animationLocalTime,
+				duration: this.params.duration,
+				progress,
 			});
 		}
 

@@ -24,8 +24,7 @@ import {
 	resolveTransformAtTime,
 } from "@/lib/animation";
 import { resolveEffectParamsAtTime } from "@/lib/animation/effect-param-channel";
-import { getEffect } from "@/lib/effects";
-import { webglEffectRenderer } from "../webgl-effect-renderer";
+import { applyRendererEffect } from "../effect-applier";
 import { clamp } from "@/utils/math";
 
 function scaleFontSize({
@@ -296,23 +295,15 @@ export class TextNode extends BaseNode<TextNodeParams> {
 			});
 			const progress =
 				this.params.duration <= 0 ? 1 : Math.min(localTime / this.params.duration, 1);
-			const definition = getEffect({ effectType: effect.type });
-			const passes = definition.renderer.passes.map((pass) => ({
-				fragmentShader: pass.fragmentShader,
-				uniforms: pass.uniforms({
-					effectParams: resolvedParams,
-					width: renderer.width,
-					height: renderer.height,
-					localTime,
-					duration: this.params.duration,
-					progress,
-				}),
-			}));
-			currentSource = webglEffectRenderer.applyEffect({
+			currentSource = applyRendererEffect({
 				source: currentSource,
 				width: renderer.width,
 				height: renderer.height,
-				passes,
+				effectType: effect.type,
+				effectParams: resolvedParams,
+				localTime,
+				duration: this.params.duration,
+				progress,
 			});
 		}
 

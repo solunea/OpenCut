@@ -11,6 +11,8 @@ export interface ApplyEffectParams {
 
 let gl: WebGLRenderingContext | null = null;
 let canvas: OffscreenCanvas | HTMLCanvasElement | null = null;
+let webglUnavailable = false;
+let hasLoggedWebglFailure = false;
 const programCache = new Map<string, WebGLProgram>();
 
 function getOrCreateCanvas({
@@ -20,12 +22,16 @@ function getOrCreateCanvas({
 	width: number;
 	height: number;
 }): OffscreenCanvas | HTMLCanvasElement {
+	if (webglUnavailable) {
+		throw new Error("WebGL not supported");
+	}
 	if (!canvas) {
 		canvas = createOffscreenCanvas({ width, height });
 		gl = canvas.getContext("webgl", {
 			premultipliedAlpha: false,
 		}) as WebGLRenderingContext | null;
 		if (!gl) {
+			webglUnavailable = true;
 			throw new Error("WebGL not supported");
 		}
 	}
@@ -34,6 +40,32 @@ function getOrCreateCanvas({
 		canvas.height = height;
 	}
 	return canvas;
+}
+
+function applyEffectOrNull({
+	source,
+	width,
+	height,
+	passes,
+}: ApplyEffectParams): OffscreenCanvas | HTMLCanvasElement | null {
+	try {
+		return applyEffect({
+			source,
+			width,
+			height,
+			passes,
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.includes("WebGL not supported")) {
+			webglUnavailable = true;
+		}
+		if (!hasLoggedWebglFailure) {
+			hasLoggedWebglFailure = true;
+			console.warn("Failed to apply WebGL effect:", error);
+		}
+		return null;
+	}
 }
 
 function applyEffect({
@@ -70,4 +102,5 @@ function applyEffect({
 
 export const webglEffectRenderer = {
 	applyEffect,
+	applyEffectOrNull,
 };

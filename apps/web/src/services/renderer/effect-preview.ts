@@ -1,17 +1,13 @@
 import { createOffscreenCanvas } from "./canvas-utils";
 import { getEffect } from "@/lib/effects";
 import type { EffectParamValues } from "@/types/effects";
-import { applyMultiPassEffect } from "./webgl-utils";
-import type { EffectPassData } from "./webgl-utils";
+import { applyRendererEffect } from "./effect-applier";
 
 const PREVIEW_SIZE = 160;
 const PREVIEW_IMAGE_PATH = "/effects/preview.jpg";
 
-let previewGl: WebGLRenderingContext | null = null;
-let previewCanvas: OffscreenCanvas | HTMLCanvasElement | null = null;
 let testSourceCanvas: OffscreenCanvas | HTMLCanvasElement | null = null;
 let previewImageElement: HTMLImageElement | null = null;
-const programCache = new Map<string, WebGLProgram>();
 const onReadyCallbacks = new Set<() => void>();
 
 export function onPreviewImageReady({
@@ -77,29 +73,6 @@ function createTestSource({
 	return canvas;
 }
 
-function getOrCreatePreviewContext({
-	width,
-	height,
-}: {
-	width: number;
-	height: number;
-}): { canvas: OffscreenCanvas | HTMLCanvasElement; gl: WebGLRenderingContext } {
-	if (!previewCanvas || !previewGl) {
-		previewCanvas = createOffscreenCanvas({ width, height });
-		previewGl = previewCanvas.getContext("webgl", {
-			premultipliedAlpha: false,
-		}) as WebGLRenderingContext | null;
-		if (!previewGl) {
-			throw new Error("WebGL not supported");
-		}
-	}
-	if (previewCanvas.width !== width || previewCanvas.height !== height) {
-		previewCanvas.width = width;
-		previewCanvas.height = height;
-	}
-	return { canvas: previewCanvas, gl: previewGl };
-}
-
 function getTestSource({
 	width,
 	height,
@@ -115,32 +88,6 @@ function getTestSource({
 		testSourceCanvas = createTestSource({ width, height });
 	}
 	return testSourceCanvas;
-}
-
-function applyWebGlEffect({
-	source,
-	width,
-	height,
-	passes,
-}: {
-	source: CanvasImageSource;
-	width: number;
-	height: number;
-	passes: EffectPassData[];
-}): OffscreenCanvas | HTMLCanvasElement {
-	const { canvas: glCanvas, gl } = getOrCreatePreviewContext({ width, height });
-
-	applyMultiPassEffect({ context: gl, source, width, height, passes, programCache });
-
-	const outputCanvas = createOffscreenCanvas({ width, height });
-	const outputCtx = outputCanvas.getContext("2d") as
-		| CanvasRenderingContext2D
-		| OffscreenCanvasRenderingContext2D
-		| null;
-	if (outputCtx) {
-		outputCtx.drawImage(glCanvas, 0, 0, width, height);
-	}
-	return outputCanvas;
 }
 
 export function renderPreview({
@@ -162,22 +109,15 @@ export function renderPreview({
 			? params
 			: buildDefaultParams({ effectType });
 
-	const passes = definition.renderer.passes.map((pass) => ({
-		fragmentShader: pass.fragmentShader,
-		uniforms: pass.uniforms({
-			effectParams: resolvedParams,
-			width: size,
-			height: size,
-			localTime: 0,
-			duration: 1,
-			progress: 1,
-		}),
-	}));
-	const result = applyWebGlEffect({
+	const result = applyRendererEffect({
 		source,
 		width: size,
 		height: size,
-		passes,
+		effectType: definition.type,
+		effectParams: resolvedParams,
+		localTime: 0,
+		duration: 1,
+		progress: 1,
 	});
 
 	const targetCtx = targetCanvas.getContext(
