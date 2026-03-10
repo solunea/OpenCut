@@ -1,0 +1,8 @@
+.git
+.gitignore
+.turbo
+node_modules
+apps/web/node_modules
+apps/web/.next
+apps/web/tsconfig.tsbuildinfo
+packages/*/node_modules
