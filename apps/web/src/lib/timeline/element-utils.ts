@@ -255,6 +255,7 @@ export function buildVideoElement({
 		trimStart: 0,
 		trimEnd: 0,
 		sourceDuration: duration,
+		playbackRate: 1,
 		muted: false,
 		hidden: false,
 		transform: { ...DEFAULT_TRANSFORM },
@@ -321,6 +322,7 @@ export function buildUploadAudioElement({
 		trimEnd: 0,
 		sourceDuration: duration,
 		volume: 1,
+		playbackRate: 1,
 		muted: false,
 	};
 	if (buffer) {
@@ -384,6 +386,7 @@ export function buildLibraryAudioElement({
 		trimEnd: 0,
 		sourceDuration: duration,
 		volume: 1,
+		playbackRate: 1,
 		muted: false,
 	};
 	if (buffer) {

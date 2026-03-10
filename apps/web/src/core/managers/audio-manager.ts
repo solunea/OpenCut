@@ -236,7 +236,8 @@ export class AudioManager {
 			return;
 		}
 		const sourceStartTime =
-			clip.trimStart + (iteratorStartTime - clip.startTime);
+			clip.trimStart +
+			(iteratorStartTime - clip.startTime) * clip.playbackRate;
 
 		const iterator = sink.buffers(sourceStartTime);
 		this.clipIterators.set(clip.id, iterator);
@@ -246,11 +247,14 @@ export class AudioManager {
 			if (!this.editor.playback.getIsPlaying()) return;
 			if (sessionId !== this.playbackSessionId) return;
 
-			const timelineTime = clip.startTime + (timestamp - clip.trimStart);
+			const timelineTime =
+				clip.startTime +
+				(timestamp - clip.trimStart) / clip.playbackRate;
 			if (timelineTime >= clipEnd) break;
 
 			const node = audioContext.createBufferSource();
 			node.buffer = buffer;
+			node.playbackRate.value = clip.playbackRate;
 			node.connect(this.masterGain ?? audioContext.destination);
 
 			const startTimestamp =
@@ -263,8 +267,8 @@ export class AudioManager {
 				consecutiveDroppedBufferCount = 0;
 			} else {
 				const offset = audioContext.currentTime - startTimestamp;
-				if (offset < buffer.duration) {
-					node.start(audioContext.currentTime, offset);
+				if (offset < buffer.duration / clip.playbackRate) {
+					node.start(audioContext.currentTime, offset * clip.playbackRate);
 					consecutiveDroppedBufferCount = 0;
 				} else {
 					consecutiveDroppedBufferCount += 1;

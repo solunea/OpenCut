@@ -7,6 +7,7 @@ import type {
 import type { MediaAsset } from "@/types/assets";
 import { canElementHaveAudio } from "@/lib/timeline/element-utils";
 import { canTracktHaveAudio } from "@/lib/timeline";
+import { normalizePlaybackRate } from "@/lib/timeline/clip-speed";
 import { mediaSupportsAudio } from "@/lib/media/media-utils";
 import { Input, ALL_FORMATS, BlobSource, AudioBufferSink } from "mediabunny";
 
@@ -16,7 +17,7 @@ const EXPORT_SAMPLE_RATE = 44100;
 export type CollectedAudioElement = Omit<
 	AudioElement,
 	"type" | "mediaId" | "volume" | "id" | "name" | "sourceType" | "sourceUrl"
-> & { buffer: AudioBuffer };
+> & { buffer: AudioBuffer; playbackRate: number };
 
 export function createAudioContext({ sampleRate }: { sampleRate?: number } = {}): AudioContext {
 	const AudioContextConstructor =
@@ -94,6 +95,9 @@ export async function collectAudioElements({
 							duration: element.duration,
 							trimStart: element.trimStart,
 							trimEnd: element.trimEnd,
+							playbackRate: normalizePlaybackRate({
+								playbackRate: element.playbackRate,
+							}),
 							muted: element.muted || isTrackMuted,
 						};
 					}),
@@ -118,6 +122,9 @@ export async function collectAudioElements({
 							duration: element.duration,
 							trimStart: element.trimStart,
 							trimEnd: element.trimEnd,
+							playbackRate: normalizePlaybackRate({
+								playbackRate: element.playbackRate,
+							}),
 							muted: elementMuted || isTrackMuted,
 						};
 					}),
@@ -241,6 +248,7 @@ interface AudioMixSource {
 	duration: number;
 	trimStart: number;
 	trimEnd: number;
+	playbackRate: number;
 }
 
 export interface AudioClipSource {
@@ -251,6 +259,7 @@ export interface AudioClipSource {
 	duration: number;
 	trimStart: number;
 	trimEnd: number;
+	playbackRate: number;
 	muted: boolean;
 }
 
@@ -276,6 +285,9 @@ async function fetchLibraryAudioSource({
 			duration: element.duration,
 			trimStart: element.trimStart,
 			trimEnd: element.trimEnd,
+			playbackRate: normalizePlaybackRate({
+				playbackRate: element.playbackRate,
+			}),
 		};
 	} catch (error) {
 		console.warn("Failed to fetch library audio:", error);
@@ -309,6 +321,9 @@ async function fetchLibraryAudioClip({
 			duration: element.duration,
 			trimStart: element.trimStart,
 			trimEnd: element.trimEnd,
+			playbackRate: normalizePlaybackRate({
+				playbackRate: element.playbackRate,
+			}),
 			muted,
 		};
 	} catch (error) {
@@ -330,6 +345,10 @@ function collectMediaAudioSource({
 		duration: element.duration,
 		trimStart: element.trimStart,
 		trimEnd: element.trimEnd,
+		playbackRate:
+			"playbackRate" in element
+				? normalizePlaybackRate({ playbackRate: element.playbackRate })
+				: 1,
 	};
 }
 
@@ -350,6 +369,10 @@ function collectMediaAudioClip({
 		duration: element.duration,
 		trimStart: element.trimStart,
 		trimEnd: element.trimEnd,
+		playbackRate:
+			"playbackRate" in element
+				? normalizePlaybackRate({ playbackRate: element.playbackRate })
+				: 1,
 		muted,
 	};
 }
@@ -530,14 +553,19 @@ function mixAudioChannels({
 	outputLength: number;
 	sampleRate: number;
 }): void {
-	const { buffer, startTime, trimStart, duration: elementDuration } = element;
+	const {
+		buffer,
+		startTime,
+		trimStart,
+		duration: elementDuration,
+		playbackRate,
+	} = element;
 
 	const sourceStartSample = Math.floor(trimStart * buffer.sampleRate);
-	const sourceLengthSamples = Math.floor(elementDuration * buffer.sampleRate);
 	const outputStartSample = Math.floor(startTime * sampleRate);
 
 	const resampleRatio = sampleRate / buffer.sampleRate;
-	const resampledLength = Math.floor(sourceLengthSamples * resampleRatio);
+	const outputDurationSamples = Math.floor(elementDuration * sampleRate);
 
 	const outputChannels = 2;
 	for (let channel = 0; channel < outputChannels; channel++) {
@@ -545,11 +573,12 @@ function mixAudioChannels({
 		const sourceChannel = Math.min(channel, buffer.numberOfChannels - 1);
 		const sourceData = buffer.getChannelData(sourceChannel);
 
-		for (let i = 0; i < resampledLength; i++) {
+		for (let i = 0; i < outputDurationSamples; i++) {
 			const outputIndex = outputStartSample + i;
 			if (outputIndex >= outputLength) break;
 
-			const sourceIndex = sourceStartSample + Math.floor(i / resampleRatio);
+			const sourceIndex =
+				sourceStartSample + Math.floor((i * playbackRate) / resampleRatio);
 			if (sourceIndex >= sourceData.length) break;
 
 			outputData[outputIndex] += sourceData[sourceIndex];

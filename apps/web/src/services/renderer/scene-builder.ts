@@ -67,6 +67,9 @@ function buildTrackNodes({
 				}
 
 				if (mediaAsset.type === "video") {
+					if (element.type !== "video") {
+						continue;
+					}
 					const videoElement = element;
 					nodes.push(
 						new VideoNode({
@@ -77,6 +80,7 @@ function buildTrackNodes({
 							timeOffset: videoElement.startTime,
 							trimStart: videoElement.trimStart,
 							trimEnd: videoElement.trimEnd,
+							playbackRate: videoElement.playbackRate,
 							transform: videoElement.transform,
 							animations: videoElement.animations,
 							opacity: videoElement.opacity,

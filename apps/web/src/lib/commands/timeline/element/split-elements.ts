@@ -4,6 +4,7 @@ import { generateUUID } from "@/utils/id";
 import { EditorCore } from "@/core";
 import { rippleShiftElements } from "@/lib/timeline";
 import { splitAnimationsAtTime } from "@/lib/animation";
+import { normalizePlaybackRate } from "@/lib/timeline/clip-speed";
 
 export class SplitElementsCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -75,6 +76,12 @@ export class SplitElementsCommand extends Command {
 				const relativeTime = this.splitTime - element.startTime;
 				const leftVisibleDuration = relativeTime;
 				const rightVisibleDuration = element.duration - relativeTime;
+				const playbackRate =
+					"playbackRate" in element
+						? normalizePlaybackRate({ playbackRate: element.playbackRate })
+						: 1;
+				const leftSourceDuration = leftVisibleDuration * playbackRate;
+				const rightSourceDuration = rightVisibleDuration * playbackRate;
 				const { leftAnimations, rightAnimations } = splitAnimationsAtTime({
 					animations: element.animations,
 					splitTime: relativeTime,
@@ -86,7 +93,7 @@ export class SplitElementsCommand extends Command {
 						{
 							...element,
 							duration: leftVisibleDuration,
-							trimEnd: element.trimEnd + rightVisibleDuration,
+							trimEnd: element.trimEnd + rightSourceDuration,
 							name: `${element.name} (left)`,
 							animations: leftAnimations,
 						},
@@ -108,7 +115,7 @@ export class SplitElementsCommand extends Command {
 							id: newId,
 							startTime: this.splitTime,
 							duration: rightVisibleDuration,
-							trimStart: element.trimStart + leftVisibleDuration,
+							trimStart: element.trimStart + leftSourceDuration,
 							name: `${element.name} (right)`,
 							animations: rightAnimations,
 						},
@@ -126,7 +133,7 @@ export class SplitElementsCommand extends Command {
 					{
 						...element,
 						duration: leftVisibleDuration,
-						trimEnd: element.trimEnd + rightVisibleDuration,
+						trimEnd: element.trimEnd + rightSourceDuration,
 						name: `${element.name} (left)`,
 						animations: leftAnimations,
 					},
@@ -135,7 +142,7 @@ export class SplitElementsCommand extends Command {
 						id: secondElementId,
 						startTime: this.splitTime,
 						duration: rightVisibleDuration,
-						trimStart: element.trimStart + leftVisibleDuration,
+						trimStart: element.trimStart + leftSourceDuration,
 						name: `${element.name} (right)`,
 						animations: rightAnimations,
 					},

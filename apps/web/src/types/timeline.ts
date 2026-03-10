@@ -70,6 +70,7 @@ export type { Transform } from "./rendering";
 interface BaseAudioElement extends BaseTimelineElement {
 	type: "audio";
 	volume: number;
+	playbackRate?: number;
 	muted?: boolean;
 	buffer?: AudioBuffer;
 }
@@ -109,6 +110,7 @@ export interface VideoFrameStyle {
 export interface VideoElement extends BaseTimelineElement {
 	type: "video";
 	mediaId: string;
+	playbackRate?: number;
 	muted?: boolean;
 	hidden?: boolean;
 	transform: Transform;
@@ -183,7 +185,8 @@ export type VisualElement =
 export type ElementUpdatePatch =
 	| { transform: Transform }
 	| { opacity: number }
-	| { volume: number };
+	| { volume: number }
+	| { playbackRate: number };
 
 export type TimelineElement =
 	| AudioElement

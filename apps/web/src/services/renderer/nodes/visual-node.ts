@@ -10,6 +10,10 @@ import {
 	resolveOpacityAtTime,
 	resolveTransformAtTime,
 } from "@/lib/animation";
+import {
+	getSourceTimeFromTimelineTime,
+	normalizePlaybackRate,
+} from "@/lib/timeline/clip-speed";
 import { resolveEffectParamsAtTime } from "@/lib/animation/effect-param-channel";
 import { TIME_EPSILON_SECONDS } from "@/constants/animation-constants";
 import { getEffect } from "@/lib/effects";
@@ -97,6 +101,7 @@ export interface VisualNodeParams {
 	timeOffset: number;
 	trimStart: number;
 	trimEnd: number;
+	playbackRate?: number;
 	transform: Transform;
 	animations?: ElementAnimations;
 	opacity: number;
@@ -109,7 +114,12 @@ export abstract class VisualNode<
 	Params extends VisualNodeParams = VisualNodeParams,
 > extends BaseNode<Params> {
 	protected getSourceLocalTime({ time }: { time: number }): number {
-		return time - this.params.timeOffset + this.params.trimStart;
+		return getSourceTimeFromTimelineTime({
+			timelineTime: time,
+			startTime: this.params.timeOffset,
+			trimStart: this.params.trimStart,
+			playbackRate: this.params.playbackRate,
+		});
 	}
 
 	protected getAnimationLocalTime({ time }: { time: number }): number {
@@ -122,9 +132,13 @@ export abstract class VisualNode<
 
 	protected isInRange({ time }: { time: number }): boolean {
 		const localTime = this.getSourceLocalTime({ time });
+		const playbackRate = normalizePlaybackRate({
+			playbackRate: this.params.playbackRate,
+		});
 		return (
 			localTime >= this.params.trimStart - TIME_EPSILON_SECONDS &&
-			localTime < this.params.trimStart + this.params.duration
+			localTime <
+				this.params.trimStart + this.params.duration * playbackRate
 		);
 	}
 

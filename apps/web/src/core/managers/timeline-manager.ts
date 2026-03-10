@@ -43,6 +43,11 @@ import {
 } from "@/lib/commands/timeline";
 import { BatchCommand, PreviewTracker } from "@/lib/commands";
 import type { InsertElementParams } from "@/lib/commands/timeline/element/insert-element";
+import {
+	getSourceDuration,
+	getTimelineDurationFromSourceDuration,
+	normalizePlaybackRate,
+} from "@/lib/timeline/clip-speed";
 
 export class TimelineManager {
 	private listeners = new Set<() => void>();
@@ -114,6 +119,64 @@ export class TimelineManager {
 			elementId,
 			duration,
 		});
+		if (pushHistory) {
+			this.editor.command.execute({ command });
+		} else {
+			command.execute();
+		}
+	}
+
+	updateElementPlaybackRate({
+		trackId,
+		elementId,
+		playbackRate,
+		pushHistory = true,
+	}: {
+		trackId: string;
+		elementId: string;
+		playbackRate: number;
+		pushHistory?: boolean;
+	}): void {
+		const track = this.getTrackById({ trackId });
+		const element = track?.elements.find(
+			(trackElement) => trackElement.id === elementId,
+		);
+
+		if (
+			!element ||
+			(element.type !== "video" && element.type !== "audio")
+		) {
+			return;
+		}
+
+		const nextPlaybackRate = normalizePlaybackRate({ playbackRate });
+		const sourceDuration = getSourceDuration({
+			sourceDuration: element.sourceDuration,
+			trimStart: element.trimStart,
+			trimEnd: element.trimEnd,
+			duration: element.duration,
+			playbackRate: element.playbackRate,
+		});
+		const nextDuration = getTimelineDurationFromSourceDuration({
+			sourceDuration,
+			trimStart: element.trimStart,
+			trimEnd: element.trimEnd,
+			playbackRate: nextPlaybackRate,
+		});
+
+		const commands = [
+			new UpdateElementDurationCommand({
+				trackId,
+				elementId,
+				duration: nextDuration,
+			}),
+			new UpdateElementCommand({
+				trackId,
+				elementId,
+				updates: { playbackRate: nextPlaybackRate },
+			}),
+		];
+		const command = new BatchCommand(commands);
 		if (pushHistory) {
 			this.editor.command.execute({ command });
 		} else {
