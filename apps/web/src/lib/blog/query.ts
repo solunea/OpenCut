@@ -12,11 +12,88 @@ import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypeSanitize from "rehype-sanitize";
 
-const url =
-	process.env.NEXT_PUBLIC_MARBLE_API_URL?.trim() ||
-	"https://api.marblecms.com";
+const isBuildTime = process.env.NEXT_PHASE === "phase-production-build";
+
+function getMarbleApiUrl(): string {
+	const envUrl = process.env.NEXT_PUBLIC_MARBLE_API_URL?.trim();
+	if (!envUrl) {
+		return "https://api.marblecms.com";
+	}
+
+	try {
+		const parsedUrl = new URL(envUrl);
+		if (parsedUrl.hostname === "placeholder.example.com") {
+			return "https://api.marblecms.com";
+		}
+		return parsedUrl.toString().replace(/\/$/, "");
+	} catch {
+		return "https://api.marblecms.com";
+	}
+}
+
+const url = getMarbleApiUrl();
 const key =
 	process.env.MARBLE_WORKSPACE_KEY?.trim() || "cmd4iw9mm0006l804kwqv0k46";
+
+function getEmptyListResponse<T>({ endpoint }: { endpoint: string }): T | null {
+	if (endpoint === "posts") {
+		return {
+			posts: [],
+			pagination: {
+				limit: 0,
+				currpage: 1,
+				nextPage: null,
+				prevPage: null,
+				totalItems: 0,
+				totalPages: 0,
+			},
+		} as T;
+	}
+
+	if (endpoint === "tags") {
+		return {
+			tags: [],
+			pagination: {
+				limit: 0,
+				currpage: 1,
+				nextPage: null,
+				prevPage: null,
+				totalItems: 0,
+				totalPages: 0,
+			},
+		} as T;
+	}
+
+	if (endpoint === "categories") {
+		return {
+			categories: [],
+			pagination: {
+				limit: 0,
+				currpage: 1,
+				nextPage: null,
+				prevPage: null,
+				totalItems: 0,
+				totalPages: 0,
+			},
+		} as T;
+	}
+
+	if (endpoint === "authors") {
+		return {
+			authors: [],
+			pagination: {
+				limit: 0,
+				currpage: 1,
+				nextPage: null,
+				prevPage: null,
+				totalItems: 0,
+				totalPages: 0,
+			},
+		} as T;
+	}
+
+	return null;
+}
 
 async function fetchFromMarble<T>({
 	endpoint,
@@ -32,6 +109,11 @@ async function fetchFromMarble<T>({
 		}
 		return (await response.json()) as T;
 	} catch (error) {
+		const emptyListResponse = getEmptyListResponse<T>({ endpoint });
+		if (isBuildTime && emptyListResponse) {
+			console.error(`Error fetching ${endpoint}:`, error);
+			return emptyListResponse;
+		}
 		console.error(`Error fetching ${endpoint}:`, error);
 		throw error;
 	}
