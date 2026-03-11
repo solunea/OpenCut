@@ -131,7 +131,7 @@ export function VideoStyleSection({
 	});
 
 	return (
-		<Section collapsible sectionKey="video:style">
+		<Section collapsible sectionKey={`video:${element.id}:style`}>
 			<SectionHeader>
 				<SectionTitle>Style</SectionTitle>
 			</SectionHeader>

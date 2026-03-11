@@ -61,7 +61,7 @@ export function ClipSpeedSection({
 	};
 
 	return (
-		<Section collapsible sectionKey={`${element.type}:speed`}>
+		<Section collapsible sectionKey={`${element.type}:${element.id}:speed`}>
 			<SectionHeader>
 				<SectionTitle>Speed</SectionTitle>
 			</SectionHeader>

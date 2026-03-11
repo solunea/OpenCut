@@ -3,6 +3,7 @@
 import { useTimelineStore } from "@/stores/timeline-store";
 import { useActionHandler } from "@/hooks/actions/use-action-handler";
 import { toast } from "sonner";
+import { buildTransitionApplication } from "@/lib/transitions";
 import { useEditor } from "../use-editor";
 import { useElementSelection } from "../timeline/element/use-element-selection";
 import { useKeyframeSelection } from "../timeline/element/use-keyframe-selection";
@@ -356,6 +357,34 @@ export function useEditorActions() {
 		"toggle-ripple-editing",
 		() => {
 			toggleRippleEditing();
+		},
+		undefined,
+	);
+
+	useActionHandler(
+		"apply-transition",
+		(args) => {
+			const result = buildTransitionApplication({
+				tracks: editor.timeline.getTracks(),
+				selectedElements,
+				transitionType: args.transitionType,
+				requestedDurationSeconds: args.durationSeconds,
+			});
+
+			if (!result.ok) {
+				toast.error("Failed to apply transition", {
+					description: result.message,
+				});
+				return;
+			}
+
+			editor.timeline.upsertKeyframes({
+				keyframes: result.keyframes,
+			});
+
+			toast.success("Transition applied", {
+				description: result.message,
+			});
 		},
 		undefined,
 	);

@@ -244,7 +244,7 @@ export function TransformSection({
 	return (
 		<Section
 			collapsible
-			sectionKey={`${element.type}:transform`}
+			sectionKey={`${element.type}:${element.id}:transform`}
 			showTopBorder={showTopBorder}
 		>
 			<SectionHeader><SectionTitle>Transform</SectionTitle></SectionHeader>

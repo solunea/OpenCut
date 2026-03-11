@@ -141,7 +141,7 @@ export function BlendingSection({
 	});
 
 	return (
-		<Section collapsible sectionKey={`${element.type}:blending`}>
+		<Section collapsible sectionKey={`${element.type}:${element.id}:blending`}>
 			<SectionHeader><SectionTitle>Blending</SectionTitle></SectionHeader>
 		<SectionContent>
 			<div className="flex items-start gap-2">

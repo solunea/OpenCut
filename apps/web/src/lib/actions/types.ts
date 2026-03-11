@@ -1,4 +1,5 @@
 import type { MutableRefObject } from "react";
+import type { TransitionType } from "@/lib/transitions";
 import type { TAction } from "./definitions";
 
 export type { TAction };
@@ -8,6 +9,10 @@ export type TActionArgsMap = {
 	"seek-backward": { seconds: number } | undefined;
 	"jump-forward": { seconds: number } | undefined;
 	"jump-backward": { seconds: number } | undefined;
+	"apply-transition": {
+		transitionType: TransitionType;
+		durationSeconds: number;
+	};
 	"export-project": { id: string };
 	"import-project": { file: File; openInEditor?: boolean };
 };

@@ -109,6 +109,11 @@ export const ACTIONS = {
 		description: "Toggle ripple editing",
 		category: "editing",
 	},
+	"apply-transition": {
+		description: "Apply a transition to selected clips",
+		category: "editing",
+		args: { transitionType: "string", durationSeconds: "number" },
+	},
 	"select-all": {
 		description: "Select all elements",
 		category: "selection",
