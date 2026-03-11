@@ -51,6 +51,9 @@ export class BackgroundImageNode extends BaseNode<BackgroundImageNodeParams> {
 		const x = (renderer.width - drawWidth) / 2;
 		const y = (renderer.height - drawHeight) / 2;
 
+		renderer.context.save();
+		renderer.context.globalCompositeOperation = "destination-over";
 		renderer.context.drawImage(source, x, y, drawWidth, drawHeight);
+		renderer.context.restore();
 	}
 }

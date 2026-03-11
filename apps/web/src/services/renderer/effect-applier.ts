@@ -17,6 +17,34 @@ function resolveNumber({
 	return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function resolveBoolean({
+	value,
+	fallback,
+}: {
+	value: number | string | boolean | undefined;
+	fallback: boolean;
+}): boolean {
+	if (typeof value === "boolean") {
+		return value;
+	}
+
+	if (typeof value === "number") {
+		return value !== 0;
+	}
+
+	if (typeof value === "string") {
+		const normalized = value.trim().toLowerCase();
+		if (normalized === "true") {
+			return true;
+		}
+		if (normalized === "false") {
+			return false;
+		}
+	}
+
+	return fallback;
+}
+
 function clamp01(value: number): number {
 	return Math.min(Math.max(value, 0), 1);
 }
@@ -112,9 +140,19 @@ function applyZoomCpuEffect({
 	const scaledHeight = height * scale;
 	const offsetX = focusPixelX - focusPixelX * scale;
 	const offsetY = focusPixelY - focusPixelY * scale;
+	const keepFrameFixed = resolveBoolean({
+		value: effectParams.keepFrameFixed,
+		fallback: true,
+	});
 
 	context.imageSmoothingEnabled = true;
 	context.drawImage(source, offsetX, offsetY, scaledWidth, scaledHeight);
+
+	if (keepFrameFixed) {
+		context.globalCompositeOperation = "destination-in";
+		context.drawImage(source, 0, 0, width, height);
+	}
+
 	return canvas;
 }
 

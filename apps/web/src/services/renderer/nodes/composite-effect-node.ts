@@ -29,13 +29,16 @@ export class CompositeEffectNode extends BaseNode<CompositeEffectNodeParams> {
 		}
 
 		const originalContext = renderer.context;
+		const originalRenderLayer = renderer.renderLayer;
 		renderer.context = offscreenCtx;
+		renderer.renderLayer = "backgroundBlur";
 
 		for (const node of this.params.contentNodes) {
 			await node.render({ renderer, time });
 		}
 
 		renderer.context = originalContext;
+		renderer.renderLayer = originalRenderLayer;
 
 		const scale = this.params.scale;
 		const scaledWidth = renderer.width * scale;

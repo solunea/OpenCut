@@ -1,5 +1,7 @@
 import type { BaseNode } from "./nodes/base-node";
 
+export type RenderLayer = "main" | "backgroundBlur";
+
 export type CanvasRendererParams = {
 	width: number;
 	height: number;
@@ -12,11 +14,13 @@ export class CanvasRenderer {
 	width: number;
 	height: number;
 	fps: number;
+	renderLayer: RenderLayer;
 
 	constructor({ width, height, fps }: CanvasRendererParams) {
 		this.width = width;
 		this.height = height;
 		this.fps = fps;
+		this.renderLayer = "main";
 
 		try {
 			this.canvas = new OffscreenCanvas(width, height);

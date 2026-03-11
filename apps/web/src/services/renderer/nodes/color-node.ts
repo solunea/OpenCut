@@ -15,6 +15,8 @@ export class ColorNode extends BaseNode<ColorNodeParams> {
 	}
 
 	async render({ renderer }: { renderer: CanvasRenderer }) {
+		renderer.context.save();
+		renderer.context.globalCompositeOperation = "destination-over";
 		if (/gradient\(/i.test(this.color)) {
 			drawCssBackground({
 				ctx: renderer.context,
@@ -22,10 +24,12 @@ export class ColorNode extends BaseNode<ColorNodeParams> {
 				height: renderer.height,
 				css: this.color,
 			});
+			renderer.context.restore();
 			return;
 		}
 
 		renderer.context.fillStyle = this.color;
 		renderer.context.fillRect(0, 0, renderer.width, renderer.height);
+		renderer.context.restore();
 	}
 }

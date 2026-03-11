@@ -15,6 +15,34 @@ function resolveNumber({
 	return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function resolveBoolean({
+	value,
+	fallback,
+}: {
+	value: number | string | boolean | undefined;
+	fallback: boolean;
+}): boolean {
+	if (typeof value === "boolean") {
+		return value;
+	}
+
+	if (typeof value === "number") {
+		return value !== 0;
+	}
+
+	if (typeof value === "string") {
+		const normalized = value.trim().toLowerCase();
+		if (normalized === "true") {
+			return true;
+		}
+		if (normalized === "false") {
+			return false;
+		}
+	}
+
+	return fallback;
+}
+
 function clamp01(value: number): number {
 	return Math.min(Math.max(value, 0), 1);
 }
@@ -104,6 +132,12 @@ export const zoomEffectDefinition: EffectDefinition = {
 			step: 1,
 		},
 		{
+			key: "keepFrameFixed",
+			label: "Keep Frame Fixed",
+			type: "boolean",
+			default: true,
+		},
+		{
 			key: "easeIn",
 			label: "Ease In",
 			type: "number",
@@ -131,6 +165,12 @@ export const zoomEffectDefinition: EffectDefinition = {
 					const zoom = Math.max(resolveNumber({ value: effectParams.zoom, fallback: 1.35 }), 1);
 					const focusX = clamp01(resolveNumber({ value: effectParams.focusX, fallback: 50 }) / 100);
 					const focusY = clamp01(resolveNumber({ value: effectParams.focusY, fallback: 50 }) / 100);
+					const keepFrameFixed = resolveBoolean({
+						value: effectParams.keepFrameFixed,
+						fallback: true,
+					})
+						? 1
+						: 0;
 					const easeIn = resolveNumber({ value: effectParams.easeIn, fallback: 20 });
 					const easeOut = resolveNumber({ value: effectParams.easeOut, fallback: 20 });
 					const strength = resolveStrength({
@@ -143,6 +183,7 @@ export const zoomEffectDefinition: EffectDefinition = {
 						u_focus: [focusX, focusY],
 						u_zoom: zoom,
 						u_strength: strength,
+						u_keepFrameFixed: keepFrameFixed,
 					};
 				},
 			},

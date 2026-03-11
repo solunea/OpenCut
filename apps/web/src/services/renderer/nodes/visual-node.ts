@@ -65,6 +65,34 @@ function resolveFrameStyle(frameStyle?: VideoFrameStyle): Required<VideoFrameSty
 	};
 }
 
+function resolveBoolean({
+	value,
+	fallback,
+}: {
+	value: number | string | boolean | undefined;
+	fallback: boolean;
+}): boolean {
+	if (typeof value === "boolean") {
+		return value;
+	}
+
+	if (typeof value === "number") {
+		return value !== 0;
+	}
+
+	if (typeof value === "string") {
+		const normalized = value.trim().toLowerCase();
+		if (normalized === "true") {
+			return true;
+		}
+		if (normalized === "false") {
+			return false;
+		}
+	}
+
+	return fallback;
+}
+
 function applyRoundedMask({
 	source,
 	width,
@@ -222,6 +250,7 @@ export abstract class VisualNode<
 		elementCtx.drawImage(source, 0, 0, pixelWidth, pixelHeight);
 
 		let currentResult: CanvasImageSource = elementCanvas;
+		let hasAppliedRoundedMask = false;
 
 		for (const effect of enabledEffects) {
 			const resolvedParams = resolveEffectParamsAtTime({
@@ -233,6 +262,33 @@ export abstract class VisualNode<
 				this.params.duration <= 0
 					? 1
 					: Math.min(animationLocalTime / this.params.duration, 1);
+			const keepFrameFixed = resolveBoolean({
+				value: resolvedParams.keepFrameFixed,
+				fallback: true,
+			});
+			const shouldSkipEffectForBackgroundBlur =
+				renderer.renderLayer === "backgroundBlur" &&
+				effect.type === "zoom" &&
+				keepFrameFixed;
+
+			if (shouldSkipEffectForBackgroundBlur) {
+				continue;
+			}
+
+			const shouldApplyZoomAfterFrameMask =
+				effect.type === "zoom" &&
+				!keepFrameFixed;
+
+			if (shouldApplyZoomAfterFrameMask && !hasAppliedRoundedMask) {
+				currentResult = applyRoundedMask({
+					source: currentResult,
+					width: pixelWidth,
+					height: pixelHeight,
+					cornerRadius: frameStyle.cornerRadius,
+				});
+				hasAppliedRoundedMask = true;
+			}
+
 			currentResult = applyRendererEffect({
 				source: currentResult,
 				width: pixelWidth,
@@ -245,12 +301,14 @@ export abstract class VisualNode<
 			});
 		}
 
-		const finalResult = applyRoundedMask({
-			source: currentResult,
-			width: pixelWidth,
-			height: pixelHeight,
-			cornerRadius: frameStyle.cornerRadius,
-		});
+		const finalResult = hasAppliedRoundedMask
+			? currentResult
+			: applyRoundedMask({
+					source: currentResult,
+					width: pixelWidth,
+					height: pixelHeight,
+					cornerRadius: frameStyle.cornerRadius,
+				});
 
 		renderer.context.shadowColor = hasShadow
 			? colorWithOpacity({

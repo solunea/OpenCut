@@ -183,6 +183,8 @@ export function buildScene({
 		canvasSize,
 		isPreview,
 	});
+	let backgroundImageNode: BackgroundImageNode | null = null;
+	let backgroundColorNode: ColorNode | null = null;
 
 	if (background.type === "blur") {
 		rootNode.add(
@@ -203,14 +205,24 @@ export function buildScene({
 			? mediaMap.get(background.mediaId)
 			: undefined;
 		if (backgroundAsset?.type === "image" && backgroundAsset.url) {
-			rootNode.add(new BackgroundImageNode({ url: backgroundAsset.url }));
+			backgroundImageNode = new BackgroundImageNode({
+				url: backgroundAsset.url,
+			});
 		}
 	} else if (background.type === "color" && background.color !== "transparent") {
-		rootNode.add(new ColorNode({ color: background.color }));
+		backgroundColorNode = new ColorNode({ color: background.color });
 	}
 
 	for (const node of allNodes) {
 		rootNode.add(node);
+	}
+
+	if (backgroundColorNode) {
+		rootNode.add(backgroundColorNode);
+	}
+
+	if (backgroundImageNode) {
+		rootNode.add(backgroundImageNode);
 	}
 
 	return rootNode;
