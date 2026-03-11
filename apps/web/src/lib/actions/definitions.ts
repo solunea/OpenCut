@@ -136,6 +136,16 @@ export const ACTIONS = {
 		description: "Toggle bookmark at playhead",
 		category: "timeline",
 	},
+	"export-project": {
+		description: "Export project file",
+		category: "controls",
+		args: { id: "string" },
+	},
+	"import-project": {
+		description: "Import project file",
+		category: "controls",
+		args: { file: "File", openInEditor: "boolean" },
+	},
 	undo: {
 		description: "Undo",
 		category: "history",

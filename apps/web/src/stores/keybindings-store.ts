@@ -9,7 +9,8 @@ import { isAppleDevice } from "@/utils/platform";
 import type { KeybindingConfig, ShortcutKey } from "@/types/keybinding";
 import { runMigrations, CURRENT_VERSION } from "./keybindings/migrations";
 
-export const defaultKeybindings: KeybindingConfig = getDefaultShortcuts();
+export const defaultKeybindings: KeybindingConfig =
+	getDefaultShortcuts() as KeybindingConfig;
 
 export interface KeybindingConflict {
 	key: ShortcutKey;

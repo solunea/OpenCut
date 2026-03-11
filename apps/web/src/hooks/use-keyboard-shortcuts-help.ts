@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useKeybindingsStore } from "@/stores/keybindings-store";
-import { ACTIONS, type TAction } from "@/lib/actions";
+import { ACTIONS, type TActionWithOptionalArgs } from "@/lib/actions";
 import {
 	getPlatformAlternateKey,
 	getPlatformSpecialKey,
@@ -13,7 +13,7 @@ export interface KeyboardShortcut {
 	keys: string[];
 	description: string;
 	category: string;
-	action: TAction;
+	action: TActionWithOptionalArgs;
 	icon?: React.ReactNode;
 }
 
@@ -77,6 +77,6 @@ export function useKeyboardShortcutsHelp() {
 	};
 }
 
-function isAction(id: string): id is TAction {
+function isAction(id: string): id is TActionWithOptionalArgs {
 	return id in ACTIONS;
 }

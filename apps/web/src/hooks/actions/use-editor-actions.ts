@@ -2,10 +2,12 @@
 
 import { useTimelineStore } from "@/stores/timeline-store";
 import { useActionHandler } from "@/hooks/actions/use-action-handler";
+import { toast } from "sonner";
 import { useEditor } from "../use-editor";
 import { useElementSelection } from "../timeline/element/use-element-selection";
 import { useKeyframeSelection } from "../timeline/element/use-keyframe-selection";
 import { getElementsAtTime } from "@/lib/timeline";
+import { downloadBlob } from "@/utils/browser";
 
 export function useEditorActions() {
 	const editor = useEditor();
@@ -283,6 +285,26 @@ export function useEditorActions() {
 		"toggle-bookmark",
 		() => {
 			editor.scenes.toggleBookmark({ time: editor.playback.getCurrentTime() });
+		},
+		undefined,
+	);
+
+	useActionHandler(
+		"export-project",
+		(args) => {
+			void (async () => {
+				try {
+					const { blob, filename } = await editor.project.exportProjectTransfer({
+						id: args.id,
+					});
+					downloadBlob({ blob, filename });
+				} catch (error) {
+					toast.error("Failed to export project", {
+						description:
+							error instanceof Error ? error.message : "Please try again",
+					});
+				}
+			})();
 		},
 		undefined,
 	);

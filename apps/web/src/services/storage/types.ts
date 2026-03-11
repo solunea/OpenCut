@@ -47,6 +47,19 @@ export type SerializedProject = Omit<TProject, "metadata" | "scenes"> & {
 	timelineViewState?: TTimelineViewState;
 };
 
+export interface SerializedProjectTransferMediaAsset extends MediaAssetData {
+	mimeType: string;
+	data: string;
+}
+
+export interface SerializedProjectTransferFile {
+	format: "opencut-project";
+	version: number;
+	exportedAt: string;
+	project: SerializedProject;
+	mediaAssets: SerializedProjectTransferMediaAsset[];
+}
+
 export interface StorageConfig {
 	projectsDb: string;
 	mediaDb: string;

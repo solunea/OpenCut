@@ -30,6 +30,8 @@ import { DEFAULT_TIMELINE_VIEW_STATE } from "@/constants/timeline-constants";
 import { loadFonts } from "@/lib/fonts/google-fonts";
 import { collectFontFamilies } from "@/lib/timeline/element-utils";
 
+const PROJECT_TRANSFER_FILE_EXTENSION = ".opencut-project.json";
+
 export interface MigrationState {
 	isMigrating: boolean;
 	fromVersion: number | null;
@@ -194,6 +196,46 @@ export class ProjectManager {
 		} catch (error) {
 			console.error("Failed to save project:", error);
 		}
+	}
+
+	async exportProjectTransfer({
+		id,
+	}: {
+		id: string;
+	}): Promise<{ blob: Blob; filename: string }> {
+		await this.ensureStorageMigrations();
+
+		if (this.active?.metadata.id === id) {
+			await this.editor.save.flush();
+		}
+
+		const transferFile = await storageService.exportProjectTransfer({ id });
+		const savedProject = this.savedProjects.find((project) => project.id === id);
+		const projectName =
+			savedProject?.name ??
+			(this.active?.metadata.id === id
+				? this.active.metadata.name
+				: transferFile.project.metadata.name);
+
+		return {
+			blob: new Blob([JSON.stringify(transferFile)], {
+				type: "application/json",
+			}),
+			filename: this.buildProjectTransferFilename({ projectName }),
+		};
+	}
+
+	async importProjectTransfer({ file }: { file: File }): Promise<string> {
+		await this.ensureStorageMigrations();
+
+		const projectId = generateUUID();
+		const importedProject = await storageService.importProjectTransfer({
+			file,
+			projectId,
+		});
+
+		this.updateMetadata(importedProject);
+		return projectId;
 	}
 
 	async export({ options }: { options: ExportOptions }): Promise<ExportResult> {
@@ -662,6 +704,16 @@ export class ProjectManager {
 		}
 
 		this.notify();
+	}
+
+	private buildProjectTransferFilename({
+		projectName,
+	}: {
+		projectName: string;
+	}): string {
+		const safeName =
+			projectName.replace(/[<>:"/\\|?*]/g, "-").trim() || "project";
+		return `${safeName}${PROJECT_TRANSFER_FILE_EXTENSION}`;
 	}
 
 	private notify(): void {

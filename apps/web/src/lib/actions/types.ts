@@ -8,6 +8,8 @@ export type TActionArgsMap = {
 	"seek-backward": { seconds: number } | undefined;
 	"jump-forward": { seconds: number } | undefined;
 	"jump-backward": { seconds: number } | undefined;
+	"export-project": { id: string };
+	"import-project": { file: File; openInEditor?: boolean };
 };
 
 type TKeysWithValueUndefined<T> = {

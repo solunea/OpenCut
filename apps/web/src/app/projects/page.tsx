@@ -3,8 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { KeyboardEvent, MouseEvent } from "react";
-import { useEffect, useState } from "react";
+import type { ChangeEvent, KeyboardEvent, MouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { MigrationDialog } from "@/components/editor/dialogs/migration-dialog";
 import { Button } from "@/components/ui/button";
@@ -64,6 +64,10 @@ import { DeleteProjectDialog } from "@/components/editor/dialogs/delete-project-
 import { ProjectInfoDialog } from "@/components/editor/dialogs/project-info-dialog";
 import { RenameProjectDialog } from "@/components/editor/dialogs/rename-project-dialog";
 import { cn } from "@/utils/ui";
+import { useActionHandler } from "@/hooks/actions/use-action-handler";
+import { invokeAction } from "@/lib/actions";
+import { downloadBlob } from "@/utils/browser";
+import { Download, Upload } from "lucide-react";
 
 const formatProjectDuration = ({
 	duration,
@@ -105,6 +109,7 @@ export default function ProjectsPage() {
 	return (
 		<div className="bg-background min-h-screen">
 			<MigrationDialog />
+			<ProjectsActionBindings />
 			<ProjectsHeader />
 			<ProjectsToolbar projectIds={projectsToDisplay.map((p) => p.id)} />
 			<main className="mx-auto px-4 pt-2 pb-6 flex flex-col gap-4">
@@ -181,12 +186,63 @@ function ProjectsHeader() {
 
 				<div className="flex items-center gap-3 md:gap-4">
 					<SearchBar className="hidden md:block" />
+					<ImportProjectButton />
 					<NewProjectButton />
 				</div>
 			</div>
 			<SearchBar className="block md:hidden mb-4" />
 		</header>
 	);
+}
+
+function ProjectsActionBindings() {
+	const editor = useEditor();
+	const router = useRouter();
+
+	useActionHandler(
+		"export-project",
+		(args) => {
+			void (async () => {
+				try {
+					const { blob, filename } = await editor.project.exportProjectTransfer({
+						id: args.id,
+					});
+					downloadBlob({ blob, filename });
+				} catch (error) {
+					toast.error("Failed to export project", {
+						description:
+							error instanceof Error ? error.message : "Please try again",
+					});
+				}
+			})();
+		},
+		undefined,
+	);
+
+	useActionHandler(
+		"import-project",
+		(args) => {
+			void (async () => {
+				try {
+					const projectId = await editor.project.importProjectTransfer({
+						file: args.file,
+					});
+					toast.success("Project imported");
+					if (args.openInEditor ?? true) {
+						router.push(`/editor/${projectId}`);
+					}
+				} catch (error) {
+					toast.error("Failed to import project", {
+						description:
+							error instanceof Error ? error.message : "Please try again",
+					});
+				}
+			})();
+		},
+		undefined,
+	);
+
+	return null;
 }
 
 const SORT_LABELS: Record<TProjectSortKey, string> = {
@@ -387,6 +443,43 @@ async function renameProject({
 	await editor.project.renameProject({ id, name });
 }
 
+function ImportProjectButton() {
+	const inputRef = useRef<HTMLInputElement>(null);
+
+	const handleImportClick = () => {
+		inputRef.current?.click();
+	};
+
+	const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0];
+		if (!file) return;
+
+		invokeAction(
+			"import-project",
+			{ file, openInEditor: true },
+			"mouseclick",
+		);
+		event.target.value = "";
+	};
+
+	return (
+		<>
+			<input
+				ref={inputRef}
+				type="file"
+				accept=".json,application/json"
+				className="hidden"
+				onChange={handleFileChange}
+			/>
+			<Button size="lg" variant="outline" className="gap-2" onClick={handleImportClick}>
+				<Upload className="size-4" />
+				<span className="text-sm font-medium hidden md:block">Import project</span>
+				<span className="text-sm font-medium block md:hidden">Import</span>
+			</Button>
+		</>
+	);
+}
+
 function ProjectActions() {
 	const editor = useEditor();
 	const { selectedProjectIds, clearSelectedProjects } = useProjectsStore();
@@ -530,7 +623,7 @@ function ProjectItem({
 }: {
 	project: TProjectMetadata;
 	allProjectIds: string[];
-}) {
+}): JSX.Element {
 	const {
 		selectedProjectIds,
 		viewMode,
@@ -555,6 +648,9 @@ function ProjectItem({
 	};
 	const handleDeleteClick = () => setIsDeleteDialogOpen(true);
 	const handleInfoClick = () => setIsInfoDialogOpen(true);
+	const handleExport = () => {
+		invokeAction("export-project", { id: project.id }, "mouseclick");
+	};
 	const handleDeleteConfirm = async () => {
 		await deleteProjects({ editor, ids: [project.id] });
 		setIsDeleteDialogOpen(false);
@@ -673,6 +769,7 @@ function ProjectItem({
 					onOpenChange={setIsDropdownOpen}
 					variant="list"
 					onRenameClick={handleRename}
+					onExportClick={handleExport}
 					onDuplicateClick={handleDuplicate}
 					onDeleteClick={handleDeleteClick}
 					onInfoClick={handleInfoClick}
@@ -714,6 +811,7 @@ function ProjectItem({
 										isOpen={isDropdownOpen}
 										onOpenChange={setIsDropdownOpen}
 										onRenameClick={handleRename}
+										onExportClick={handleExport}
 										onDuplicateClick={handleDuplicate}
 										onDeleteClick={handleDeleteClick}
 										onInfoClick={handleInfoClick}
@@ -727,6 +825,7 @@ function ProjectItem({
 				</ContextMenuTrigger>
 				<ProjectContextMenuContent
 					onRenameClick={handleRename}
+					onExportClick={handleExport}
 					onDuplicateClick={handleDuplicate}
 					onDeleteClick={handleDeleteClick}
 					onInfoClick={handleInfoClick}
@@ -761,11 +860,13 @@ function ProjectItem({
 
 function ProjectContextMenuContent({
 	onRenameClick,
+	onExportClick,
 	onDuplicateClick,
 	onDeleteClick,
 	onInfoClick,
 }: {
 	onRenameClick: () => void;
+	onExportClick: () => void;
 	onDuplicateClick: () => void;
 	onDeleteClick: () => void;
 	onInfoClick: () => void;
@@ -777,6 +878,9 @@ function ProjectContextMenuContent({
 				onClick={onRenameClick}
 			>
 				Rename
+			</ContextMenuItem>
+			<ContextMenuItem icon={<Download className="size-4" />} onClick={onExportClick}>
+				Export
 			</ContextMenuItem>
 			<ContextMenuItem
 				icon={<HugeiconsIcon icon={Copy01Icon} />}
@@ -807,6 +911,7 @@ function ProjectMenu({
 	onOpenChange,
 	variant = "grid",
 	onRenameClick,
+	onExportClick,
 	onDuplicateClick,
 	onDeleteClick,
 	onInfoClick,
@@ -815,6 +920,7 @@ function ProjectMenu({
 	onOpenChange: (open: boolean) => void;
 	variant?: "grid" | "list";
 	onRenameClick: () => void;
+	onExportClick: () => void;
 	onDuplicateClick: () => void;
 	onDeleteClick: () => void;
 	onInfoClick: () => void;
@@ -847,6 +953,11 @@ function ProjectMenu({
 
 	const handleDuplicate = () => {
 		onDuplicateClick();
+		onOpenChange(false);
+	};
+
+	const handleExport = () => {
+		onExportClick();
 		onOpenChange(false);
 	};
 
@@ -897,6 +1008,10 @@ function ProjectMenu({
 				<DropdownMenuItem onClick={handleRename}>
 					<HugeiconsIcon icon={Edit03Icon} />
 					Rename
+				</DropdownMenuItem>
+				<DropdownMenuItem onClick={handleExport}>
+					<Download className="size-4" />
+					Export
 				</DropdownMenuItem>
 				<DropdownMenuItem onClick={handleDuplicate}>
 					<HugeiconsIcon icon={Copy01Icon} />
@@ -1007,10 +1122,13 @@ function EmptyState() {
 					videos. All privately.
 				</p>
 			</div>
-			<Button size="lg" className="gap-2" onClick={handleCreateProject}>
-				<HugeiconsIcon icon={PlusSignIcon} />
-				Create your first project
-			</Button>
+			<div className="flex flex-col sm:flex-row items-center gap-3">
+				<Button size="lg" className="gap-2" onClick={handleCreateProject}>
+					<HugeiconsIcon icon={PlusSignIcon} />
+					Create your first project
+				</Button>
+				<ImportProjectButton />
+			</div>
 		</div>
 	);
 }

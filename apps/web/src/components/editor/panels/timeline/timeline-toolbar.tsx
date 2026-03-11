@@ -17,7 +17,7 @@ import { Slider } from "@/components/ui/slider";
 import { TIMELINE_CONSTANTS } from "@/constants/timeline-constants";
 import { sliderToZoom, zoomToSlider } from "@/lib/timeline/zoom-utils";
 import { ScenesView } from "../../scenes-view";
-import { type TAction, invokeAction } from "@/lib/actions";
+import { type TActionWithOptionalArgs, invokeAction } from "@/lib/actions";
 import { cn } from "@/utils/ui";
 import { useTimelineStore } from "@/stores/timeline-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -84,7 +84,7 @@ function ToolbarLeftSection() {
 		action,
 		event,
 	}: {
-		action: TAction;
+		action: TActionWithOptionalArgs;
 		event: React.MouseEvent;
 	}) => {
 		event.stopPropagation();

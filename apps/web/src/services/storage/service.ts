@@ -7,6 +7,8 @@ import type {
 	MediaAssetData,
 	StorageConfig,
 	SerializedProject,
+	SerializedProjectTransferFile,
+	SerializedProjectTransferMediaAsset,
 	SerializedScene,
 } from "./types";
 import type { SavedSoundsData, SavedSound, SoundEffect } from "@/types/sounds";
@@ -15,6 +17,67 @@ import {
 	runStorageMigrations,
 } from "@/services/storage/migrations";
 import type { Bookmark, TimelineTrack, TScene } from "@/types/timeline";
+
+const PROJECT_TRANSFER_FORMAT = "opencut-project";
+const PROJECT_TRANSFER_VERSION = 1;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+async function fileToBase64({ file }: { file: File }): Promise<string> {
+	return await new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			if (typeof reader.result !== "string") {
+				reject(new Error("Could not read project media file"));
+				return;
+			}
+
+			const separatorIndex = reader.result.indexOf(",");
+			resolve(
+				separatorIndex === -1
+					? reader.result
+					: reader.result.slice(separatorIndex + 1),
+			);
+		};
+		reader.onerror = () => reject(reader.error ?? new Error("Could not read project media file"));
+		reader.readAsDataURL(file);
+	});
+}
+
+function base64ToFile({
+	base64,
+	name,
+	type,
+	lastModified,
+}: {
+	base64: string;
+	name: string;
+	type: string;
+	lastModified: number;
+}): File {
+	const binary = atob(base64);
+	const bytes = new Uint8Array(binary.length);
+
+	for (let index = 0; index < binary.length; index += 1) {
+		bytes[index] = binary.charCodeAt(index);
+	}
+
+	return new File([bytes], name, { type, lastModified });
+}
+
+
+function isSerializedProjectTransferFile(
+	raw: unknown,
+): raw is SerializedProjectTransferFile {
+	if (!isRecord(raw)) return false;
+	if (raw.format !== PROJECT_TRANSFER_FORMAT) return false;
+	if (typeof raw.version !== "number") return false;
+	if (typeof raw.exportedAt !== "string") return false;
+	if (!Array.isArray(raw.mediaAssets)) return false;
+	return isRecord(raw.project);
+}
 
 function normalizeBookmarks({ raw }: { raw: unknown }): Bookmark[] {
 	if (!Array.isArray(raw)) return [];
@@ -107,7 +170,7 @@ class StorageService {
 		});
 	}
 
-	async saveProject({ project }: { project: TProject }): Promise<void> {
+	private serializeProject({ project }: { project: TProject }): SerializedProject {
 		const duration =
 			project.metadata.duration ??
 			getProjectDurationFromScenes({ scenes: project.scenes });
@@ -121,7 +184,7 @@ class StorageService {
 			updatedAt: scene.updatedAt.toISOString(),
 		}));
 
-		const serializedProject: SerializedProject = {
+		return {
 			metadata: {
 				id: project.metadata.id,
 				name: project.metadata.name,
@@ -136,20 +199,13 @@ class StorageService {
 			version: project.version,
 			timelineViewState: project.timelineViewState,
 		};
-
-		await this.projectsAdapter.set(project.metadata.id, serializedProject);
 	}
 
-	async loadProject({
-		id,
+	private deserializeProject({
+		serializedProject,
 	}: {
-		id: string;
-	}): Promise<{ project: TProject } | null> {
-		await this.ensureMigrations();
-		const serializedProject = await this.projectsAdapter.get(id);
-
-		if (!serializedProject) return null;
-
+		serializedProject: SerializedProject;
+	}): TProject {
 		const scenes =
 			serializedProject.scenes?.map((scene) => ({
 				id: scene.id,
@@ -157,7 +213,7 @@ class StorageService {
 				isMain: scene.isMain,
 				tracks: (scene.tracks ?? []).map((track) =>
 					track.type === "video"
-						? { ...track, isMain: track.isMain ?? false } // legacy: isMain was optional
+						? { ...track, isMain: track.isMain ?? false }
 						: track,
 				),
 				bookmarks: normalizeBookmarks({ raw: scene.bookmarks }),
@@ -165,7 +221,7 @@ class StorageService {
 				updatedAt: new Date(scene.updatedAt),
 			})) ?? [];
 
-		const project: TProject = {
+		return {
 			metadata: {
 				id: serializedProject.metadata.id,
 				name: serializedProject.metadata.name,
@@ -182,7 +238,24 @@ class StorageService {
 			version: serializedProject.version,
 			timelineViewState: serializedProject.timelineViewState,
 		};
+	}
 
+	async saveProject({ project }: { project: TProject }): Promise<void> {
+		const serializedProject = this.serializeProject({ project });
+		await this.projectsAdapter.set(project.metadata.id, serializedProject);
+	}
+
+	async loadProject({
+		id,
+	}: {
+		id: string;
+	}): Promise<{ project: TProject } | null> {
+		await this.ensureMigrations();
+		const serializedProject = await this.projectsAdapter.get(id);
+
+		if (!serializedProject) return null;
+
+		const project = this.deserializeProject({ serializedProject });
 		return { project };
 	}
 
@@ -249,6 +322,7 @@ class StorageService {
 			width: mediaAsset.width,
 			height: mediaAsset.height,
 			duration: mediaAsset.duration,
+			fps: mediaAsset.fps,
 			thumbnailUrl: mediaAsset.thumbnailUrl,
 			ephemeral: mediaAsset.ephemeral,
 		};
@@ -299,6 +373,7 @@ class StorageService {
 			width: metadata.width,
 			height: metadata.height,
 			duration: metadata.duration,
+			fps: metadata.fps,
 			thumbnailUrl: metadata.thumbnailUrl,
 			ephemeral: metadata.ephemeral,
 		};
@@ -324,6 +399,121 @@ class StorageService {
 		}
 
 		return mediaItems;
+	}
+
+	async exportProjectTransfer({
+		id,
+	}: {
+		id: string;
+	}): Promise<SerializedProjectTransferFile> {
+		await this.ensureMigrations();
+		const result = await this.loadProject({ id });
+
+		if (!result) {
+			throw new Error(`Project with id ${id} not found`);
+		}
+
+		const mediaAssets = await this.loadAllMediaAssets({ projectId: id });
+		const serializedMediaAssets: SerializedProjectTransferMediaAsset[] =
+			await Promise.all(
+				mediaAssets.map(async (mediaAsset) => ({
+					id: mediaAsset.id,
+					name: mediaAsset.name,
+					type: mediaAsset.type,
+					size: mediaAsset.file.size,
+					lastModified: mediaAsset.file.lastModified,
+					width: mediaAsset.width,
+					height: mediaAsset.height,
+					duration: mediaAsset.duration,
+					fps: mediaAsset.fps,
+					thumbnailUrl: mediaAsset.thumbnailUrl,
+					ephemeral: mediaAsset.ephemeral,
+					mimeType: mediaAsset.file.type,
+					data: await fileToBase64({ file: mediaAsset.file }),
+				})),
+			);
+
+		return {
+			format: PROJECT_TRANSFER_FORMAT,
+			version: PROJECT_TRANSFER_VERSION,
+			exportedAt: new Date().toISOString(),
+			project: this.serializeProject({ project: result.project }),
+			mediaAssets: serializedMediaAssets,
+		};
+	}
+
+	async importProjectTransfer({
+		file,
+		projectId,
+	}: {
+		file: File;
+		projectId: string;
+	}): Promise<TProject> {
+		await this.ensureMigrations();
+
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(await file.text()) as unknown;
+		} catch {
+			throw new Error("Invalid project file");
+		}
+
+		if (!isSerializedProjectTransferFile(parsed)) {
+			throw new Error("Unsupported project file");
+		}
+
+		const transferFile = parsed as SerializedProjectTransferFile;
+		const deserializedProject = this.deserializeProject({
+			serializedProject: transferFile.project,
+		});
+		const importedProject: TProject = {
+			...deserializedProject,
+			metadata: {
+				...deserializedProject.metadata,
+				id: projectId,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			},
+		};
+
+		try {
+			await this.saveProject({ project: importedProject });
+
+			await Promise.all(
+				transferFile.mediaAssets.map(async (mediaAsset) => {
+					const importedFile = base64ToFile({
+						base64: mediaAsset.data,
+						name: mediaAsset.name,
+						type: mediaAsset.mimeType,
+						lastModified: mediaAsset.lastModified,
+					});
+
+					await this.saveMediaAsset({
+						projectId,
+						mediaAsset: {
+							id: mediaAsset.id,
+							name: mediaAsset.name,
+							type: mediaAsset.type,
+							file: importedFile,
+							width: mediaAsset.width,
+							height: mediaAsset.height,
+							duration: mediaAsset.duration,
+							fps: mediaAsset.fps,
+							thumbnailUrl: mediaAsset.thumbnailUrl,
+							ephemeral: mediaAsset.ephemeral,
+						},
+					});
+				}),
+			);
+
+			return importedProject;
+		} catch (error) {
+			await Promise.allSettled([
+				this.deleteProjectMedia({ projectId }),
+				this.deleteProject({ id: projectId }),
+			]);
+			throw error;
+		}
 	}
 
 	async deleteMediaAsset({

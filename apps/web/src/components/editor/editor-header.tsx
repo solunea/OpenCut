@@ -24,6 +24,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ShortcutsDialog } from "./dialogs/shortcuts-dialog";
 import Image from "next/image";
 import { cn } from "@/utils/ui";
+import { invokeAction } from "@/lib/actions";
+import { Download } from "lucide-react";
 
 export function EditorHeader() {
 	return (
@@ -125,6 +127,19 @@ function ProjectDropdown() {
 						icon={<HugeiconsIcon icon={Logout05Icon} />}
 					>
 						Exit project
+					</DropdownMenuItem>
+
+					<DropdownMenuItem
+						onClick={() =>
+							invokeAction(
+								"export-project",
+								{ id: activeProject.metadata.id },
+								"mouseclick",
+							)
+						}
+						icon={<Download className="size-4" />}
+					>
+						Export project
 					</DropdownMenuItem>
 
 					<DropdownMenuItem

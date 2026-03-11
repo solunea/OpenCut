@@ -35,7 +35,11 @@ import type {
 } from "@/types/timeline";
 import type { MediaAsset } from "@/types/assets";
 import { mediaSupportsAudio } from "@/lib/media/media-utils";
-import { getActionDefinition, type TAction, invokeAction } from "@/lib/actions";
+import {
+	getActionDefinition,
+	type TActionWithOptionalArgs,
+	invokeAction,
+} from "@/lib/actions";
 import { useElementSelection } from "@/hooks/timeline/element/use-element-selection";
 import { resolveStickerId } from "@/lib/stickers";
 import Image from "next/image";
@@ -153,7 +157,7 @@ export function getKeyframeIndicators({
 	return [...keyframesByTime.values()].sort((a, b) => a.time - b.time);
 }
 
-export function getDisplayShortcut({ action }: { action: TAction }) {
+export function getDisplayShortcut({ action }: { action: TActionWithOptionalArgs }) {
 	const { defaultShortcuts } = getActionDefinition({ action });
 	if (!defaultShortcuts?.length) {
 		return "";
@@ -886,7 +890,7 @@ function ActionMenuItem({
 	children,
 	...props
 }: Omit<ComponentProps<typeof ContextMenuItem>, "onClick" | "textRight"> & {
-	action: TAction;
+	action: TActionWithOptionalArgs;
 	children: ReactNode;
 }) {
 	return (
