@@ -15,8 +15,9 @@ void main() {
   vec2 sampleCoord = u_focus + (v_texCoord - u_focus) / scale;
   vec4 zoomedColor = texture2D(u_texture, sampleCoord);
   float keepFrameFixed = step(0.5, u_keepFrameFixed);
-  float preserveSilhouette = keepFrameFixed * (1.0 - step(0.999, baseColor.a));
-  vec4 fixedFrameColor = vec4(zoomedColor.rgb, baseColor.a);
-  vec4 keepFrameFixedColor = mix(fixedFrameColor, baseColor, preserveSilhouette);
+  vec4 keepFrameFixedColor = vec4(
+    zoomedColor.rgb,
+    zoomedColor.a * baseColor.a
+  );
   gl_FragColor = mix(zoomedColor, keepFrameFixedColor, keepFrameFixed);
 }
