@@ -72,7 +72,7 @@ export function TimelineBookmarksRow({
 	handleRulerTrackingMouseDown,
 	handleRulerMouseDown,
 }: TimelineBookmarksRowProps) {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["scenes"] });
 	const activeScene = editor.scenes.getActiveScene();
 
 	return (
@@ -123,7 +123,7 @@ function TimelineBookmark({
 		bookmark: Bookmark;
 	}) => void;
 }) {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["timeline"] });
 	const duration = editor.timeline.getTotalDuration();
 	const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
@@ -287,7 +287,7 @@ function BookmarkPopoverContent({
 	timelineDuration: number;
 	onPopoverClose: () => void;
 }) {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: [] });
 	const [draftColorHex, setDraftColorHex] = useState(
 		(bookmark.color ?? DEFAULT_BOOKMARK_COLOR).replace("#", "").toUpperCase(),
 	);

@@ -76,7 +76,7 @@ export function TimelineToolbar({
 }
 
 function ToolbarLeftSection() {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["playback", "scenes", "project"] });
 	const currentTime = editor.playback.getCurrentTime();
 	const isCurrentlyBookmarked = editor.scenes.isBookmarked({ time: currentTime });
 

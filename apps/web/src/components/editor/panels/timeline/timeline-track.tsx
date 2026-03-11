@@ -51,7 +51,7 @@ export function TimelineTrackContent({
 	shouldIgnoreClick,
 	targetElementId = null,
 }: TimelineTrackContentProps) {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["timeline"] });
 	const { isElementSelected } = useElementSelection();
 
 	const duration = editor.timeline.getTotalDuration();

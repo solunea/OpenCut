@@ -37,7 +37,7 @@ export function useTimelineZoom({
 	tracksScrollRef,
 	rulerScrollRef,
 }: UseTimelineZoomProps): UseTimelineZoomReturn {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: [] });
 	const hasInitializedRef = useRef(false);
 	const hasRestoredPlayheadRef = useRef(false);
 	const scrollSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(

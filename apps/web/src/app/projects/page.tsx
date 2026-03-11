@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ChangeEvent, KeyboardEvent, MouseEvent } from "react";
+import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { MigrationDialog } from "@/components/editor/dialogs/migration-dialog";
@@ -623,7 +623,7 @@ function ProjectItem({
 }: {
 	project: TProjectMetadata;
 	allProjectIds: string[];
-}): JSX.Element {
+}): ReactElement {
 	const {
 		selectedProjectIds,
 		viewMode,

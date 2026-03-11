@@ -18,7 +18,7 @@ import { PreviewContextMenu } from "./context-menu";
 import { PreviewToolbar } from "./toolbar";
 
 function usePreviewSize() {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["project"] });
 	const activeProject = editor.project.getActive();
 
 	return {
@@ -45,14 +45,14 @@ export function PreviewPanel() {
 			</div>
 			<PreviewToolbar
 				isFullscreen={isFullscreen}
-				onToggleFullscreen={toggleFullscreen}
+				onToggleFullscreenAction={toggleFullscreen}
 			/>
 		</div>
 	);
 }
 
 function RenderTreeController() {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["timeline", "media", "project", "scenes"] });
 	const tracks = editor.timeline.getTracks();
 	const mediaAssets = editor.media.getAssets();
 	const activeProject = editor.project.getActive();
@@ -93,7 +93,7 @@ function PreviewCanvas({
 	const renderingRef = useRef(false);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const containerSize = useContainerSize({ containerRef: outerContainerRef });
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["project", "renderer"] });
 	const activeProject = editor.project.getActive();
 	const { overlays } = usePreviewStore();
 

@@ -199,7 +199,7 @@ export function TimelineElement({
 	dragState,
 	isDropTarget = false,
 }: TimelineElementProps) {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["media"] });
 	const { selectedElements } = useElementSelection();
 	const { requestRevealMedia } = useAssetsPanelStore();
 

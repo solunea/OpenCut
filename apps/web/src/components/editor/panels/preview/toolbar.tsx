@@ -16,12 +16,12 @@ import { Separator } from "@/components/ui/separator";
 
 export function PreviewToolbar({
 	isFullscreen,
-	onToggleFullscreen,
+	onToggleFullscreenAction,
 }: {
 	isFullscreen: boolean;
-	onToggleFullscreen: () => void;
+	onToggleFullscreenAction: () => void;
 }) {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["playback", "timeline", "project", "scenes"] });
 	const isPlaying = editor.playback.getIsPlaying();
 	const currentTime = editor.playback.getCurrentTime();
 	const totalDuration = editor.timeline.getTotalDuration();
@@ -61,7 +61,7 @@ export function PreviewToolbar({
 					variant="secondary"
 					size="sm"
 					className="[&_svg]:size-auto px-1 h-7"
-					onClick={onToggleFullscreen}
+					onClick={onToggleFullscreenAction}
 					title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
 				>
 					<OcSocialIcon size={20} />
@@ -69,7 +69,7 @@ export function PreviewToolbar({
 				<Separator orientation="vertical" className="h-4" />
 				<Button
 					variant="text"
-					onClick={onToggleFullscreen}
+					onClick={onToggleFullscreenAction}
 					title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
 				>
 					<HugeiconsIcon icon={FullScreenIcon} />

@@ -62,7 +62,7 @@ export function Timeline() {
 	const tracksContainerHeight = { min: 0, max: TRACKS_CONTAINER_MAX_HEIGHT };
 	const snappingEnabled = useTimelineStore((s) => s.snappingEnabled);
 	const { clearElementSelection, setElementSelection } = useElementSelection();
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["timeline", "project"] });
 	const timeline = editor.timeline;
 	const tracks = timeline.getTracks();
 	const seek = (time: number) => editor.playback.seek({ time });

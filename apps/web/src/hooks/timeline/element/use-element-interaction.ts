@@ -164,7 +164,7 @@ export function useElementInteraction({
 	snappingEnabled,
 	onSnapPointChange,
 }: UseElementInteractionProps) {
-	const editor = useEditor();
+	const editor = useEditor({ subscribeTo: ["timeline", "project"] });
 	const rippleEditingEnabled = useTimelineStore((s) => s.rippleEditingEnabled);
 	const isShiftHeldRef = useShiftKey();
 	const tracks = editor.timeline.getTracks();
