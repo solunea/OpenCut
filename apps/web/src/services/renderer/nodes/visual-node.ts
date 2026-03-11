@@ -123,6 +123,86 @@ function applyRoundedMask({
 	return maskedCanvas;
 }
 
+function drawFrameShape({
+	context,
+	width,
+	height,
+	cornerRadius,
+}: {
+	context: RenderableContext;
+	width: number;
+	height: number;
+	cornerRadius: number;
+}): void {
+	context.beginPath();
+	if (cornerRadius <= 0) {
+		context.rect(0, 0, width, height);
+		return;
+	}
+
+	const percent = Math.min(Math.max(cornerRadius, 0), 100) / 100;
+	const radius = Math.min(width, height) * 0.5 * percent;
+	context.roundRect(0, 0, width, height, radius);
+}
+
+function drawStaticFrameShadow({
+	context,
+	x,
+	y,
+	width,
+	height,
+	cornerRadius,
+	shadowBlur,
+	shadowOffsetX,
+	shadowOffsetY,
+	shadowColor,
+}: {
+	context: RenderableContext;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	cornerRadius: number;
+	shadowBlur: number;
+	shadowOffsetX: number;
+	shadowOffsetY: number;
+	shadowColor: string;
+}): void {
+	const shadowCanvasWidth = Math.max(1, Math.ceil(width));
+	const shadowCanvasHeight = Math.max(1, Math.ceil(height));
+	const shadowCanvas = createOffscreenCanvas({
+		width: shadowCanvasWidth,
+		height: shadowCanvasHeight,
+	});
+	const shadowCtx = shadowCanvas.getContext("2d") as RenderableContext | null;
+	if (!shadowCtx) {
+		return;
+	}
+
+	shadowCtx.fillStyle = "#000";
+	drawFrameShape({
+		context: shadowCtx,
+		width: shadowCanvasWidth,
+		height: shadowCanvasHeight,
+		cornerRadius,
+	});
+	shadowCtx.fill();
+
+	context.save();
+	context.shadowColor = shadowColor;
+	context.shadowBlur = shadowBlur;
+	context.shadowOffsetX = shadowOffsetX;
+	context.shadowOffsetY = shadowOffsetY;
+	context.drawImage(
+		shadowCanvas,
+		x,
+		y,
+		width,
+		height,
+	);
+	context.restore();
+}
+
 export interface VisualNodeParams {
 	duration: number;
 	timeOffset: number;
@@ -251,6 +331,7 @@ export abstract class VisualNode<
 
 		let currentResult: CanvasImageSource = elementCanvas;
 		let hasAppliedRoundedMask = false;
+		let hasKeepFrameFixedZoom = false;
 
 		for (const effect of enabledEffects) {
 			const resolvedParams = resolveEffectParamsAtTime({
@@ -273,6 +354,10 @@ export abstract class VisualNode<
 
 			if (shouldSkipEffectForBackgroundBlur) {
 				continue;
+			}
+
+			if (effect.type === "zoom" && keepFrameFixed) {
+				hasKeepFrameFixedZoom = true;
 			}
 
 			const shouldApplyZoomAfterFrameMask =
@@ -309,6 +394,40 @@ export abstract class VisualNode<
 					height: pixelHeight,
 					cornerRadius: frameStyle.cornerRadius,
 				});
+
+		if (hasKeepFrameFixedZoom) {
+			if (hasShadow) {
+				drawStaticFrameShadow({
+					context: renderer.context,
+					x,
+					y,
+					width: scaledWidth,
+					height: scaledHeight,
+					cornerRadius: frameStyle.cornerRadius,
+					shadowBlur: frameStyle.shadowBlur,
+					shadowOffsetX: frameStyle.shadowOffsetX,
+					shadowOffsetY: frameStyle.shadowOffsetY,
+					shadowColor: colorWithOpacity({
+						color: frameStyle.shadowColor,
+						opacity: frameStyle.shadowOpacity,
+					}),
+				});
+			}
+
+			renderer.context.save();
+			renderer.context.translate(x, y);
+			drawFrameShape({
+				context: renderer.context,
+				width: scaledWidth,
+				height: scaledHeight,
+				cornerRadius: frameStyle.cornerRadius,
+			});
+			renderer.context.clip();
+			renderer.context.drawImage(currentResult, 0, 0, scaledWidth, scaledHeight);
+			renderer.context.restore();
+			renderer.context.restore();
+			return;
+		}
 
 		renderer.context.shadowColor = hasShadow
 			? colorWithOpacity({

@@ -149,8 +149,41 @@ function applyZoomCpuEffect({
 	context.drawImage(source, offsetX, offsetY, scaledWidth, scaledHeight);
 
 	if (keepFrameFixed) {
-		context.globalCompositeOperation = "destination-in";
-		context.drawImage(source, 0, 0, width, height);
+		const baseCanvas = createOffscreenCanvas({ width, height });
+		const baseCtx = baseCanvas.getContext("2d") as
+			| CanvasRenderingContext2D
+			| OffscreenCanvasRenderingContext2D
+			| null;
+		if (!baseCtx) {
+			return canvas;
+		}
+
+		baseCtx.drawImage(source, 0, 0, width, height);
+
+		const baseImageData = baseCtx.getImageData(0, 0, width, height);
+		const zoomedImageData = context.getImageData(0, 0, width, height);
+		const baseData = baseImageData.data;
+		const zoomedData = zoomedImageData.data;
+
+		for (let index = 0; index < baseData.length; index += 4) {
+			const alpha = baseData[index + 3] / 255;
+			const opaqueInterior = Math.min(Math.max((alpha - 0.98) / 0.019, 0), 1);
+
+			zoomedData[index] = Math.round(
+				baseData[index] + (zoomedData[index] - baseData[index]) * opaqueInterior,
+			);
+			zoomedData[index + 1] = Math.round(
+				baseData[index + 1] +
+					(zoomedData[index + 1] - baseData[index + 1]) * opaqueInterior,
+			);
+			zoomedData[index + 2] = Math.round(
+				baseData[index + 2] +
+					(zoomedData[index + 2] - baseData[index + 2]) * opaqueInterior,
+			);
+			zoomedData[index + 3] = baseData[index + 3];
+		}
+
+		context.putImageData(zoomedImageData, 0, 0);
 	}
 
 	return canvas;

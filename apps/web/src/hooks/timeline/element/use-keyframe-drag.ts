@@ -58,6 +58,7 @@ export function useKeyframeDrag({
 	const [isPendingDrag, setIsPendingDrag] = useState(false);
 
 	const pendingDragRef = useRef<PendingKeyframeDrag | null>(null);
+	const draggingKeyframeRefsRef = useRef<SelectedKeyframeRef[]>([]);
 	const mouseDownXRef = useRef<number | null>(null);
 
 	const activeProject = editor.project.getActive();
@@ -66,6 +67,7 @@ export function useKeyframeDrag({
 	const pixelsPerSecond = TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel;
 
 	const endDrag = useCallback(() => {
+		draggingKeyframeRefsRef.current = [];
 		setDragState(initialDragState);
 	}, []);
 
@@ -118,6 +120,7 @@ export function useKeyframeDrag({
 				const pending = pendingDragRef.current;
 				pendingDragRef.current = null;
 				setIsPendingDrag(false);
+				draggingKeyframeRefsRef.current = pending.keyframeRefs;
 				setDragState({
 					isDragging: true,
 					draggingKeyframeIds: new Set(
@@ -145,7 +148,7 @@ export function useKeyframeDrag({
 		if (!dragState.isDragging) return;
 
 		const handleMouseUp = () => {
-			const draggingRefs = selectedKeyframes.filter(
+			const draggingRefs = draggingKeyframeRefsRef.current.filter(
 				(keyframe) =>
 					keyframe.elementId === element.id &&
 					dragState.draggingKeyframeIds.has(keyframe.keyframeId),
@@ -167,7 +170,6 @@ export function useKeyframeDrag({
 		dragState.isDragging,
 		dragState.draggingKeyframeIds,
 		dragState.deltaTime,
-		selectedKeyframes,
 		element.id,
 		commitDrag,
 		endDrag,
@@ -178,6 +180,7 @@ export function useKeyframeDrag({
 
 		const handleMouseUp = () => {
 			pendingDragRef.current = null;
+			draggingKeyframeRefsRef.current = [];
 			setIsPendingDrag(false);
 		};
 
