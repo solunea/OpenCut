@@ -11,7 +11,9 @@ import {
 	resolveTransformAtTime,
 } from "@/lib/animation";
 import {
+	getClampedVideoSourceTimeFromTimelineTime,
 	getSourceTimeFromTimelineTime,
+	getVisibleTimelineDuration,
 	normalizePlaybackRate,
 } from "@/lib/timeline/clip-speed";
 import { resolveEffectParamsAtTime } from "@/lib/animation/effect-param-channel";
@@ -209,6 +211,8 @@ export interface VisualNodeParams {
 	trimStart: number;
 	trimEnd: number;
 	playbackRate?: number;
+	freezeFrameStart?: number;
+	freezeFrameEnd?: number;
 	transform: Transform;
 	animations?: ElementAnimations;
 	opacity: number;
@@ -221,6 +225,21 @@ export abstract class VisualNode<
 	Params extends VisualNodeParams = VisualNodeParams,
 > extends BaseNode<Params> {
 	protected getSourceLocalTime({ time }: { time: number }): number {
+		if (
+			typeof this.params.freezeFrameStart === "number" ||
+			typeof this.params.freezeFrameEnd === "number"
+		) {
+			return getClampedVideoSourceTimeFromTimelineTime({
+				timelineTime: time,
+				startTime: this.params.timeOffset,
+				trimStart: this.params.trimStart,
+				duration: this.params.duration,
+				playbackRate: this.params.playbackRate,
+				freezeFrameStart: this.params.freezeFrameStart,
+				freezeFrameEnd: this.params.freezeFrameEnd,
+			});
+		}
+
 		return getSourceTimeFromTimelineTime({
 			timelineTime: time,
 			startTime: this.params.timeOffset,
@@ -238,14 +257,21 @@ export abstract class VisualNode<
 	}
 
 	protected isInRange({ time }: { time: number }): boolean {
-		const localTime = this.getSourceLocalTime({ time });
-		const playbackRate = normalizePlaybackRate({
-			playbackRate: this.params.playbackRate,
+		const timelineLocalTime = Math.max(0, time - this.params.timeOffset);
+		const freezeFrameStart = this.params.freezeFrameStart ?? 0;
+		const freezeFrameEnd = this.params.freezeFrameEnd ?? 0;
+		const visibleTimelineDuration = getVisibleTimelineDuration({
+			duration: this.params.duration,
+			freezeFrameStart,
+			freezeFrameEnd,
 		});
 		return (
-			localTime >= this.params.trimStart - TIME_EPSILON_SECONDS &&
-			localTime <
-				this.params.trimStart + this.params.duration * playbackRate
+			timelineLocalTime >= -TIME_EPSILON_SECONDS &&
+			timelineLocalTime <
+				freezeFrameStart +
+					visibleTimelineDuration +
+					freezeFrameEnd +
+					TIME_EPSILON_SECONDS
 		);
 	}
 

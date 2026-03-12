@@ -75,6 +75,8 @@ export class TimelineManager {
 		elementId,
 		trimStart,
 		trimEnd,
+		freezeFrameStart,
+		freezeFrameEnd,
 		startTime,
 		duration,
 		pushHistory = true,
@@ -83,6 +85,8 @@ export class TimelineManager {
 		elementId: string;
 		trimStart: number;
 		trimEnd: number;
+		freezeFrameStart?: number;
+		freezeFrameEnd?: number;
 		startTime?: number;
 		duration?: number;
 		pushHistory?: boolean;
@@ -92,6 +96,8 @@ export class TimelineManager {
 			elementId,
 			trimStart,
 			trimEnd,
+			freezeFrameStart,
+			freezeFrameEnd,
 			startTime,
 			duration,
 			rippleEnabled,

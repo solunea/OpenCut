@@ -5,7 +5,14 @@ import { getElementKeyframes } from "@/lib/animation";
 
 export interface SnapPoint {
 	time: number;
-	type: "element-start" | "element-end" | "playhead" | "bookmark" | "keyframe";
+	type:
+		| "element-start"
+		| "element-end"
+		| "freeze-start"
+		| "freeze-end"
+		| "playhead"
+		| "bookmark"
+		| "keyframe";
 	elementId?: string;
 	trackId?: string;
 }
@@ -60,6 +67,29 @@ export function findSnapPoints({
 						trackId: track.id,
 					},
 				);
+
+				if (element.type === "video") {
+					const freezeFrameStart = element.freezeFrameStart ?? 0;
+					const freezeFrameEnd = element.freezeFrameEnd ?? 0;
+
+					if (freezeFrameStart > 0) {
+						snapPoints.push({
+							time: element.startTime + freezeFrameStart,
+							type: "freeze-start",
+							elementId: element.id,
+							trackId: track.id,
+						});
+					}
+
+					if (freezeFrameEnd > 0) {
+						snapPoints.push({
+							time: element.startTime + element.duration - freezeFrameEnd,
+							type: "freeze-end",
+							elementId: element.id,
+							trackId: track.id,
+						});
+					}
+				}
 			}
 
 			if (enableKeyframeSnapping) {

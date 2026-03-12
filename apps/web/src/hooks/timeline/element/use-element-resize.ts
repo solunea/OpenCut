@@ -21,6 +21,8 @@ export interface ResizeState {
 	startX: number;
 	initialTrimStart: number;
 	initialTrimEnd: number;
+	initialFreezeFrameStart: number;
+	initialFreezeFrameEnd: number;
 	initialStartTime: number;
 	initialDuration: number;
 }
@@ -51,10 +53,22 @@ export function useTimelineElementResize({
 	const [resizing, setResizing] = useState<ResizeState | null>(null);
 	const [currentTrimStart, setCurrentTrimStart] = useState(element.trimStart);
 	const [currentTrimEnd, setCurrentTrimEnd] = useState(element.trimEnd);
+	const [currentFreezeFrameStart, setCurrentFreezeFrameStart] = useState(
+		element.type === "video" ? element.freezeFrameStart ?? 0 : 0,
+	);
+	const [currentFreezeFrameEnd, setCurrentFreezeFrameEnd] = useState(
+		element.type === "video" ? element.freezeFrameEnd ?? 0 : 0,
+	);
 	const [currentStartTime, setCurrentStartTime] = useState(element.startTime);
 	const [currentDuration, setCurrentDuration] = useState(element.duration);
 	const currentTrimStartRef = useRef(element.trimStart);
 	const currentTrimEndRef = useRef(element.trimEnd);
+	const currentFreezeFrameStartRef = useRef(
+		element.type === "video" ? element.freezeFrameStart ?? 0 : 0,
+	);
+	const currentFreezeFrameEndRef = useRef(
+		element.type === "video" ? element.freezeFrameEnd ?? 0 : 0,
+	);
 	const currentStartTimeRef = useRef(element.startTime);
 	const currentDurationRef = useRef(element.duration);
 
@@ -76,24 +90,38 @@ export function useTimelineElementResize({
 			startX: event.clientX,
 			initialTrimStart: element.trimStart,
 			initialTrimEnd: element.trimEnd,
+			initialFreezeFrameStart:
+				element.type === "video" ? element.freezeFrameStart ?? 0 : 0,
+			initialFreezeFrameEnd:
+				element.type === "video" ? element.freezeFrameEnd ?? 0 : 0,
 			initialStartTime: element.startTime,
 			initialDuration: element.duration,
 		});
 
 		setCurrentTrimStart(element.trimStart);
 		setCurrentTrimEnd(element.trimEnd);
+		setCurrentFreezeFrameStart(
+			element.type === "video" ? element.freezeFrameStart ?? 0 : 0,
+		);
+		setCurrentFreezeFrameEnd(
+			element.type === "video" ? element.freezeFrameEnd ?? 0 : 0,
+		);
 		setCurrentStartTime(element.startTime);
 		setCurrentDuration(element.duration);
 		currentTrimStartRef.current = element.trimStart;
 		currentTrimEndRef.current = element.trimEnd;
+		currentFreezeFrameStartRef.current =
+			element.type === "video" ? element.freezeFrameStart ?? 0 : 0;
+		currentFreezeFrameEndRef.current =
+			element.type === "video" ? element.freezeFrameEnd ?? 0 : 0;
 		currentStartTimeRef.current = element.startTime;
 		currentDurationRef.current = element.duration;
 		onResizeStateChange?.({ isResizing: true });
 	};
 
 	const canExtendElementDuration = useCallback(() => {
-		return element.sourceDuration == null;
-	}, [element.sourceDuration]);
+		return element.sourceDuration == null || element.type === "video";
+	}, [element.sourceDuration, element.type]);
 
 	const updateTrimFromMouseMove = useCallback(
 		({ clientX }: { clientX: number }) => {
@@ -177,6 +205,120 @@ export function useTimelineElementResize({
 								-Infinity,
 							)
 					: -Infinity;
+
+			if (element.type === "video") {
+				if (resizing.side === "left") {
+					const minStartTime = Number.isFinite(leftNeighborBound)
+						? Math.max(0, leftNeighborBound)
+						: 0;
+					const maxTrimStart =
+						sourceDuration -
+						resizing.initialTrimEnd -
+						minDurationSeconds * playbackRate;
+					const maxPositiveShift =
+						resizing.initialFreezeFrameStart +
+						Math.max(0, maxTrimStart - resizing.initialTrimStart) / playbackRate;
+					const targetStartTime = Math.min(
+						resizing.initialStartTime + maxPositiveShift,
+						Math.max(minStartTime, resizing.initialStartTime + deltaTime),
+					);
+					const nextStartTime = snapTimeToFrame({
+						time: targetStartTime,
+						fps: projectFps,
+					});
+					const actualShift = nextStartTime - resizing.initialStartTime;
+					const consumeFreeze = Math.min(
+						resizing.initialFreezeFrameStart,
+						Math.max(0, actualShift),
+					);
+					const trimIncreaseTimeline = Math.max(0, actualShift - consumeFreeze);
+					const revealTimeline = Math.min(
+						resizing.initialTrimStart / playbackRate,
+						Math.max(0, -actualShift),
+					);
+					const freezeIncrease = Math.max(0, -actualShift - revealTimeline);
+					const newFreezeFrameStart = Math.max(
+						0,
+						resizing.initialFreezeFrameStart - consumeFreeze + freezeIncrease,
+					);
+					const newTrimStart = Math.min(
+						maxTrimStart,
+						Math.max(
+							0,
+							resizing.initialTrimStart +
+								(trimIncreaseTimeline - revealTimeline) * playbackRate,
+						),
+					);
+					const newDuration = snapTimeToFrame({
+						time: resizing.initialStartTime + resizing.initialDuration - nextStartTime,
+						fps: projectFps,
+					});
+
+					setCurrentTrimStart(newTrimStart);
+					setCurrentFreezeFrameStart(newFreezeFrameStart);
+					setCurrentStartTime(nextStartTime);
+					setCurrentDuration(newDuration);
+					currentTrimStartRef.current = newTrimStart;
+					currentFreezeFrameStartRef.current = newFreezeFrameStart;
+					currentStartTimeRef.current = nextStartTime;
+					currentDurationRef.current = newDuration;
+					return;
+				}
+
+				const maxAllowedDuration = Number.isFinite(rightNeighborBound)
+					? rightNeighborBound - resizing.initialStartTime
+					: Infinity;
+				const maxTrimEnd =
+					sourceDuration -
+					resizing.initialTrimStart -
+					minDurationSeconds * playbackRate;
+				const maxShrink =
+					resizing.initialFreezeFrameEnd +
+					Math.max(0, maxTrimEnd - resizing.initialTrimEnd) / playbackRate;
+				const minDuration = Math.max(
+					minDurationSeconds,
+					resizing.initialDuration - maxShrink,
+				);
+				const targetDuration = Math.min(
+					maxAllowedDuration,
+					Math.max(minDuration, resizing.initialDuration + deltaTime),
+				);
+				const nextDuration = snapTimeToFrame({
+					time: targetDuration,
+					fps: projectFps,
+				});
+				const actualDelta = nextDuration - resizing.initialDuration;
+				const revealTimeline = Math.min(
+					resizing.initialTrimEnd / playbackRate,
+					Math.max(0, actualDelta),
+				);
+				const freezeIncrease = Math.max(0, actualDelta - revealTimeline);
+				const consumeFreeze = Math.min(
+					resizing.initialFreezeFrameEnd,
+					Math.max(0, -actualDelta),
+				);
+				const trimIncreaseTimeline = Math.max(0, -actualDelta - consumeFreeze);
+				const newFreezeFrameEnd = Math.max(
+					0,
+					resizing.initialFreezeFrameEnd + freezeIncrease - consumeFreeze,
+				);
+				const newTrimEnd = Math.min(
+					maxTrimEnd,
+					Math.max(
+						0,
+						resizing.initialTrimEnd +
+							(trimIncreaseTimeline - revealTimeline) * playbackRate,
+					),
+				);
+
+				setCurrentTrimEnd(newTrimEnd);
+				setCurrentFreezeFrameEnd(newFreezeFrameEnd);
+				setCurrentDuration(nextDuration);
+				currentTrimEndRef.current = newTrimEnd;
+				currentFreezeFrameEndRef.current = newFreezeFrameEnd;
+				currentDurationRef.current = nextDuration;
+				return;
+			}
 
 			if (resizing.side === "left") {
 				const minVisibleSourceDuration = minDurationSeconds * playbackRate;
@@ -363,18 +505,35 @@ export function useTimelineElementResize({
 
 		const finalTrimStart = currentTrimStartRef.current;
 		const finalTrimEnd = currentTrimEndRef.current;
+		const finalFreezeFrameStart = currentFreezeFrameStartRef.current;
+		const finalFreezeFrameEnd = currentFreezeFrameEndRef.current;
 		const finalStartTime = currentStartTimeRef.current;
 		const finalDuration = currentDurationRef.current;
 		const trimStartChanged = finalTrimStart !== resizing.initialTrimStart;
 		const trimEndChanged = finalTrimEnd !== resizing.initialTrimEnd;
+		const freezeFrameStartChanged =
+			finalFreezeFrameStart !== resizing.initialFreezeFrameStart;
+		const freezeFrameEndChanged =
+			finalFreezeFrameEnd !== resizing.initialFreezeFrameEnd;
 		const startTimeChanged = finalStartTime !== resizing.initialStartTime;
 		const durationChanged = finalDuration !== resizing.initialDuration;
 
-		if (trimStartChanged || trimEndChanged || startTimeChanged || durationChanged) {
+		if (
+			trimStartChanged ||
+			trimEndChanged ||
+			freezeFrameStartChanged ||
+			freezeFrameEndChanged ||
+			startTimeChanged ||
+			durationChanged
+		) {
 			editor.timeline.updateElementTrim({
 				elementId: element.id,
 				trimStart: finalTrimStart,
 				trimEnd: finalTrimEnd,
+				freezeFrameStart:
+					element.type === "video" ? finalFreezeFrameStart : undefined,
+				freezeFrameEnd:
+					element.type === "video" ? finalFreezeFrameEnd : undefined,
 				startTime: startTimeChanged ? finalStartTime : undefined,
 				duration: durationChanged ? finalDuration : undefined,
 				rippleEnabled: rippleEditingEnabled,
@@ -419,6 +578,8 @@ export function useTimelineElementResize({
 		handleResizeStart,
 		currentTrimStart,
 		currentTrimEnd,
+		currentFreezeFrameStart,
+		currentFreezeFrameEnd,
 		currentStartTime,
 		currentDuration,
 	};

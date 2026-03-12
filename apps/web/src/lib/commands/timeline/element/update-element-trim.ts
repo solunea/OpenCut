@@ -9,6 +9,8 @@ export class UpdateElementTrimCommand extends Command {
 	private readonly elementId: string;
 	private readonly trimStart: number;
 	private readonly trimEnd: number;
+	private readonly freezeFrameStart: number | undefined;
+	private readonly freezeFrameEnd: number | undefined;
 	private readonly startTime: number | undefined;
 	private readonly duration: number | undefined;
 	private readonly rippleEnabled: boolean;
@@ -17,6 +19,8 @@ export class UpdateElementTrimCommand extends Command {
 		elementId,
 		trimStart,
 		trimEnd,
+		freezeFrameStart,
+		freezeFrameEnd,
 		startTime,
 		duration,
 		rippleEnabled = false,
@@ -24,6 +28,8 @@ export class UpdateElementTrimCommand extends Command {
 		elementId: string;
 		trimStart: number;
 		trimEnd: number;
+		freezeFrameStart?: number;
+		freezeFrameEnd?: number;
 		startTime?: number;
 		duration?: number;
 		rippleEnabled?: boolean;
@@ -32,6 +38,8 @@ export class UpdateElementTrimCommand extends Command {
 		this.elementId = elementId;
 		this.trimStart = trimStart;
 		this.trimEnd = trimEnd;
+		this.freezeFrameStart = freezeFrameStart;
+		this.freezeFrameEnd = freezeFrameEnd;
 		this.startTime = startTime;
 		this.duration = duration;
 		this.rippleEnabled = rippleEnabled;
@@ -58,6 +66,14 @@ export class UpdateElementTrimCommand extends Command {
 				...targetElement,
 				trimStart: this.trimStart,
 				trimEnd: this.trimEnd,
+				...(targetElement.type === "video"
+					? {
+							freezeFrameStart:
+								this.freezeFrameStart ?? targetElement.freezeFrameStart ?? 0,
+							freezeFrameEnd:
+								this.freezeFrameEnd ?? targetElement.freezeFrameEnd ?? 0,
+						}
+					: {}),
 				startTime: nextStartTime,
 				duration: nextDuration,
 				animations: clampAnimationsToDuration({

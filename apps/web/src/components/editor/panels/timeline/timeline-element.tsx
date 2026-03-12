@@ -12,6 +12,10 @@ import { useKeyframeSelection } from "@/hooks/timeline/element/use-keyframe-sele
 import type { SnapPoint } from "@/lib/timeline/snap-utils";
 import { getElementKeyframes } from "@/lib/animation";
 import {
+	getVisibleTimelineDuration,
+	normalizeFreezeFrameDuration,
+} from "@/lib/timeline/clip-speed";
+import {
 	getTrackClasses,
 	getTrackHeight,
 	canElementHaveAudio,
@@ -213,14 +217,20 @@ export function TimelineElement({
 
 	const hasAudio = mediaSupportsAudio({ media: mediaAsset });
 
-	const { handleResizeStart, isResizing, currentStartTime, currentDuration } =
-		useTimelineElementResize({
-			element,
-			track,
-			zoomLevel,
-			onSnapPointChange,
-			onResizeStateChange,
-		});
+	const {
+		handleResizeStart,
+		isResizing,
+		currentStartTime,
+		currentDuration,
+		currentFreezeFrameStart,
+		currentFreezeFrameEnd,
+	} = useTimelineElementResize({
+		element,
+		track,
+		zoomLevel,
+		onSnapPointChange,
+		onResizeStateChange,
+	});
 
 	const isCurrentElementSelected = selectedElements.some(
 		(selected) =>
@@ -238,6 +248,22 @@ export function TimelineElement({
 			: element.startTime;
 	const displayedStartTime = isResizing ? currentStartTime : elementStartTime;
 	const displayedDuration = isResizing ? currentDuration : element.duration;
+	const displayedFreezeFrameStart =
+		element.type === "video"
+			? isResizing
+				? currentFreezeFrameStart
+				: isBeingDragged && dragState.isDragging
+					? dragState.currentFreezeFrameStart ?? (element.freezeFrameStart ?? 0)
+				: element.freezeFrameStart ?? 0
+			: 0;
+	const displayedFreezeFrameEnd =
+		element.type === "video"
+			? isResizing
+				? currentFreezeFrameEnd
+				: isBeingDragged && dragState.isDragging
+					? dragState.currentFreezeFrameEnd ?? (element.freezeFrameEnd ?? 0)
+				: element.freezeFrameEnd ?? 0
+			: 0;
 	const elementWidth = timelineTimeToPixels({
 		time: displayedDuration,
 		zoomLevel,
@@ -295,6 +321,9 @@ export function TimelineElement({
 						onElementMouseDown={onElementMouseDown}
 						handleResizeStart={handleResizeStart}
 						isDropTarget={isDropTarget}
+						displayedDuration={displayedDuration}
+						displayedFreezeFrameStart={displayedFreezeFrameStart}
+						displayedFreezeFrameEnd={displayedFreezeFrameEnd}
 					/>
 					{isSelected && (
 						<div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -379,6 +408,9 @@ function ElementInner({
 	onElementMouseDown,
 	handleResizeStart,
 	isDropTarget = false,
+	displayedDuration,
+	displayedFreezeFrameStart,
+	displayedFreezeFrameEnd,
 }: {
 	element: TimelineElementType;
 	track: TimelineTrack;
@@ -397,6 +429,9 @@ function ElementInner({
 		side: "left" | "right";
 	}) => void;
 	isDropTarget?: boolean;
+	displayedDuration: number;
+	displayedFreezeFrameStart: number;
+	displayedFreezeFrameEnd: number;
 }) {
 	const opacityClass =
 		(canElementBeHidden(element) && element.hidden) || isDropTarget
@@ -439,6 +474,14 @@ function ElementInner({
 							element={element}
 							track={track}
 							isSelected={isSelected}
+							displayedFreezeFrameStart={displayedFreezeFrameStart}
+							displayedFreezeFrameEnd={displayedFreezeFrameEnd}
+						/>
+						<FreezeFrameOverlay
+							element={element}
+							displayedDuration={displayedDuration}
+							displayedFreezeFrameStart={displayedFreezeFrameStart}
+							displayedFreezeFrameEnd={displayedFreezeFrameEnd}
 						/>
 					</div>
 				</button>
@@ -586,6 +629,8 @@ interface ElementContentProps {
 	element: TimelineElementType;
 	track: TimelineTrack;
 	isSelected: boolean;
+	displayedFreezeFrameStart?: number;
+	displayedFreezeFrameEnd?: number;
 }
 
 interface ElementContentRendererProps extends ElementContentProps {
@@ -594,14 +639,89 @@ interface ElementContentRendererProps extends ElementContentProps {
 
 type ElementContentRenderer = (props: ElementContentRendererProps) => ReactNode;
 
+function FreezeFrameOverlay({
+	element,
+	displayedDuration,
+	displayedFreezeFrameStart,
+	displayedFreezeFrameEnd,
+}: {
+	element: TimelineElementType;
+	displayedDuration: number;
+	displayedFreezeFrameStart: number;
+	displayedFreezeFrameEnd: number;
+}) {
+	if (element.type !== "video") {
+		return null;
+	}
+
+	const freezeFrameStart = normalizeFreezeFrameDuration({
+		duration: displayedFreezeFrameStart,
+	});
+	const freezeFrameEnd = normalizeFreezeFrameDuration({
+		duration: displayedFreezeFrameEnd,
+	});
+
+	if (displayedDuration <= 0 || (freezeFrameStart <= 0 && freezeFrameEnd <= 0)) {
+		return null;
+	}
+
+	const leftWidthPercent = (freezeFrameStart / displayedDuration) * 100;
+	const rightWidthPercent = (freezeFrameEnd / displayedDuration) * 100;
+
+	return (
+		<div className="pointer-events-none absolute inset-0 z-10">
+			{freezeFrameStart > 0 && (
+				<div
+					className="absolute inset-y-0 left-0 overflow-hidden border-r border-white/40 bg-white/18"
+					style={{
+						width: `${leftWidthPercent}%`,
+						backgroundImage:
+							"repeating-linear-gradient(135deg, rgba(255,255,255,0.16) 0 8px, rgba(255,255,255,0.02) 8px 16px)",
+					}}
+				>
+					{leftWidthPercent >= 14 && (
+						<div className="flex size-full items-center justify-center px-2">
+							<span className="truncate text-[10px] font-medium uppercase tracking-wide text-white/90">
+								Freeze
+							</span>
+						</div>
+					)}
+				</div>
+			)}
+			{freezeFrameEnd > 0 && (
+				<div
+					className="absolute inset-y-0 right-0 overflow-hidden border-l border-white/40 bg-white/18"
+					style={{
+						width: `${rightWidthPercent}%`,
+						backgroundImage:
+							"repeating-linear-gradient(135deg, rgba(255,255,255,0.16) 0 8px, rgba(255,255,255,0.02) 8px 16px)",
+					}}
+				>
+					{rightWidthPercent >= 14 && (
+						<div className="flex size-full items-center justify-center px-2">
+							<span className="truncate text-[10px] font-medium uppercase tracking-wide text-white/90">
+								Freeze
+							</span>
+						</div>
+					)}
+				</div>
+			)}
+		</div>
+	);
+}
+
 export function renderTiledMedia({
 	element,
 	imageUrl,
 	track,
+	displayedFreezeFrameStart,
+	displayedFreezeFrameEnd,
 }: {
 	element: VisualElement;
 	imageUrl: string | undefined;
 	track: ElementContentProps["track"];
+	displayedFreezeFrameStart?: number;
+	displayedFreezeFrameEnd?: number;
 }): ReactNode {
 	if (!imageUrl) {
 		return (
@@ -613,15 +733,38 @@ export function renderTiledMedia({
 
 	const trackHeight = getTrackHeight({ type: track.type });
 	const tileWidth = trackHeight * (16 / 9);
+	const freezeFrameStart =
+		element.type === "video"
+			? normalizeFreezeFrameDuration({
+					duration: displayedFreezeFrameStart ?? element.freezeFrameStart,
+				})
+			: 0;
+	const freezeFrameEnd =
+		element.type === "video"
+			? normalizeFreezeFrameDuration({
+					duration: displayedFreezeFrameEnd ?? element.freezeFrameEnd,
+				})
+			: 0;
+	const visibleTimelineDuration = getVisibleTimelineDuration({
+		duration: element.duration,
+		freezeFrameStart,
+		freezeFrameEnd,
+	});
+	const visibleWidthPercent =
+		element.duration > 0 ? (visibleTimelineDuration / element.duration) * 100 : 100;
+	const leftOffsetPercent =
+		element.duration > 0 ? (freezeFrameStart / element.duration) * 100 : 0;
 
 	return (
 		<div
-			className="absolute inset-0"
+			className="absolute inset-y-0"
 			style={{
 				backgroundImage: `url(${imageUrl})`,
 				backgroundRepeat: "repeat-x",
 				backgroundSize: `${tileWidth}px ${trackHeight}px`,
 				backgroundPosition: "left center",
+				left: `${leftOffsetPercent}%`,
+				width: `${visibleWidthPercent}%`,
 				pointerEvents: "none",
 			}}
 		/>
@@ -746,7 +889,13 @@ const ELEMENT_CONTENT_RENDERERS: Record<
 			</span>
 		);
 	},
-	video: ({ element, track, mediaAssets }) => {
+	video: ({
+		element,
+		track,
+		mediaAssets,
+		displayedFreezeFrameStart,
+		displayedFreezeFrameEnd,
+	}) => {
 		const videoElement = element as Extract<
 			TimelineElementType,
 			{ type: "video" }
@@ -758,6 +907,8 @@ const ELEMENT_CONTENT_RENDERERS: Record<
 			element: videoElement,
 			imageUrl: mediaAsset?.thumbnailUrl,
 			track,
+			displayedFreezeFrameStart,
+			displayedFreezeFrameEnd,
 		});
 	},
 	image: ({ element, track, mediaAssets }) => {

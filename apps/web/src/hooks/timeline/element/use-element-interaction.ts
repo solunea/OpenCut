@@ -6,6 +6,7 @@ import {
 	type MouseEvent as ReactMouseEvent,
 	type RefObject,
 } from "react";
+import type { Command } from "@/lib/commands";
 import { useEditor } from "@/hooks/use-editor";
 import { useShiftKey } from "@/hooks/use-shift-key";
 import { useTimelineStore } from "@/stores/timeline-store";
@@ -19,9 +20,16 @@ import { computeDropTarget } from "@/lib/timeline/drop-utils";
 import { getMouseTimeFromClientX } from "@/lib/timeline/drag-utils";
 import { generateUUID } from "@/utils/id";
 import {
+	findSnapPoints,
 	snapElementEdge,
+	snapToNearestPoint,
 	type SnapPoint,
 } from "@/lib/timeline/snap-utils";
+import {
+	BatchCommand,
+	MoveElementCommand,
+	UpdateElementTrimCommand,
+} from "@/lib/commands";
 import type {
 	DropTarget,
 	ElementDragState,
@@ -51,6 +59,8 @@ const initialDragState: ElementDragState = {
 	clickOffsetTime: 0,
 	currentTime: 0,
 	currentMouseY: 0,
+	currentFreezeFrameStart: undefined,
+	currentFreezeFrameEnd: undefined,
 };
 
 interface PendingDragState {
@@ -60,6 +70,15 @@ interface PendingDragState {
 	startMouseY: number;
 	startElementTime: number;
 	clickOffsetTime: number;
+	initialFreezeFrameStart?: number;
+	initialFreezeFrameEnd?: number;
+}
+
+interface DragSnapPreview {
+	snappedTime: number;
+	snapPoint: SnapPoint | null;
+	freezeFrameStart?: number;
+	freezeFrameEnd?: number;
 }
 
 function getClickOffsetTime({
@@ -192,6 +211,8 @@ export function useElementInteraction({
 			clickOffsetTime,
 			initialCurrentTime,
 			initialCurrentMouseY,
+			currentFreezeFrameStart,
+			currentFreezeFrameEnd,
 		}: StartDragParams) => {
 			setDragState({
 				isDragging: true,
@@ -203,6 +224,8 @@ export function useElementInteraction({
 				clickOffsetTime,
 				currentTime: initialCurrentTime,
 				currentMouseY: initialCurrentMouseY,
+				currentFreezeFrameStart,
+				currentFreezeFrameEnd,
 			});
 		},
 		[],
@@ -220,14 +243,30 @@ export function useElementInteraction({
 		}: {
 			frameSnappedTime: number;
 			movingElement: TimelineElement | null | undefined;
-		}) => {
+		}): DragSnapPreview => {
+			const baseFreezePreview =
+				movingElement?.type === "video"
+					? {
+							freezeFrameStart: movingElement.freezeFrameStart ?? 0,
+							freezeFrameEnd: movingElement.freezeFrameEnd ?? 0,
+						}
+					: {};
 			const shouldSnap = snappingEnabled && !isShiftHeldRef.current;
 			if (!shouldSnap || !movingElement) {
-				return { snappedTime: frameSnappedTime, snapPoint: null };
+				return {
+					snappedTime: frameSnappedTime,
+					snapPoint: null,
+					...baseFreezePreview,
+				};
 			}
 
 			const elementDuration = movingElement.duration;
 			const playheadTime = editor.playback.getCurrentTime();
+			const snapPoints = findSnapPoints({
+				tracks,
+				playheadTime,
+				excludeElementId: movingElement.id,
+			});
 
 			const startSnap = snapElementEdge({
 				targetTime: frameSnappedTime,
@@ -249,16 +288,84 @@ export function useElementInteraction({
 				snapToStart: false,
 			});
 
-			const snapResult =
-				startSnap.snapDistance <= endSnap.snapDistance ? startSnap : endSnap;
-			if (!snapResult.snapPoint) {
-				return { snappedTime: frameSnappedTime, snapPoint: null };
+			const candidates = [
+				{
+					snappedTime: startSnap.snappedTime,
+					snapPoint: startSnap.snapPoint,
+					snapDistance: startSnap.snapDistance,
+					...baseFreezePreview,
+				},
+				{
+					snappedTime: endSnap.snappedTime,
+					snapPoint: endSnap.snapPoint,
+					snapDistance: endSnap.snapDistance,
+					...baseFreezePreview,
+				},
+			].filter((candidate) => candidate.snapPoint);
+
+			if (movingElement.type === "video") {
+				const totalFreeze =
+					(movingElement.freezeFrameStart ?? 0) +
+					(movingElement.freezeFrameEnd ?? 0);
+
+				if (totalFreeze > 0) {
+					const visibleStartSnap = snapToNearestPoint({
+						targetTime:
+							frameSnappedTime + (movingElement.freezeFrameStart ?? 0),
+						snapPoints,
+						zoomLevel,
+					});
+					if (visibleStartSnap.snapPoint) {
+						const nextFreezeFrameStart =
+							visibleStartSnap.snappedTime - frameSnappedTime;
+						if (
+							nextFreezeFrameStart >= 0 &&
+							nextFreezeFrameStart <= totalFreeze
+						) {
+							candidates.push({
+								snappedTime: frameSnappedTime,
+								snapPoint: visibleStartSnap.snapPoint,
+								snapDistance: visibleStartSnap.snapDistance,
+								freezeFrameStart: nextFreezeFrameStart,
+								freezeFrameEnd: totalFreeze - nextFreezeFrameStart,
+							});
+						}
+					}
+
+					const visibleEndSnap = snapToNearestPoint({
+						targetTime:
+							frameSnappedTime +
+							movingElement.duration -
+							(movingElement.freezeFrameEnd ?? 0),
+						snapPoints,
+						zoomLevel,
+					});
+					if (visibleEndSnap.snapPoint) {
+						const nextFreezeFrameEnd =
+							frameSnappedTime + movingElement.duration - visibleEndSnap.snappedTime;
+						if (nextFreezeFrameEnd >= 0 && nextFreezeFrameEnd <= totalFreeze) {
+							candidates.push({
+								snappedTime: frameSnappedTime,
+								snapPoint: visibleEndSnap.snapPoint,
+								snapDistance: visibleEndSnap.snapDistance,
+								freezeFrameStart: totalFreeze - nextFreezeFrameEnd,
+								freezeFrameEnd: nextFreezeFrameEnd,
+							});
+						}
+					}
+				}
 			}
 
-			return {
-				snappedTime: snapResult.snappedTime,
-				snapPoint: snapResult.snapPoint,
-			};
+			if (candidates.length === 0) {
+				return {
+					snappedTime: frameSnappedTime,
+					snapPoint: null,
+					...baseFreezePreview,
+				};
+			}
+
+			candidates.sort((left, right) => left.snapDistance - right.snapDistance);
+			return candidates[0];
 		},
 		[snappingEnabled, editor.playback, tracks, zoomLevel, isShiftHeldRef],
 	);
@@ -298,6 +405,10 @@ export function useElementInteraction({
 						...pendingDragRef.current,
 						initialCurrentTime: snappedTime,
 						initialCurrentMouseY: clientY,
+						currentFreezeFrameStart:
+							pendingDragRef.current.initialFreezeFrameStart,
+						currentFreezeFrameEnd:
+							pendingDragRef.current.initialFreezeFrameEnd,
 					});
 					startedDragThisEvent = true;
 					pendingDragRef.current = null;
@@ -342,7 +453,8 @@ export function useElementInteraction({
 			const movingElement = sourceTrack?.elements.find(
 				({ id }) => id === dragState.elementId,
 			);
-			const { snappedTime, snapPoint } = getDragSnapResult({
+			const { snappedTime, snapPoint, freezeFrameStart, freezeFrameEnd } =
+				getDragSnapResult({
 				frameSnappedTime,
 				movingElement,
 			});
@@ -350,6 +462,8 @@ export function useElementInteraction({
 				...previousDragState,
 				currentTime: snappedTime,
 				currentMouseY: clientY,
+				currentFreezeFrameStart: freezeFrameStart,
+				currentFreezeFrameEnd: freezeFrameEnd,
 			}));
 			onSnapPointChange?.(snapPoint);
 
@@ -445,33 +559,66 @@ export function useElementInteraction({
 				return;
 			}
 
-		if (dropTarget.isNewTrack) {
-			const newTrackId = generateUUID();
+			const movedElement = sourceTrack.elements.find(
+				({ id }) => id === dragState.elementId,
+			);
+			if (!movedElement) {
+				endDrag();
+				onSnapPointChange?.(null);
+				return;
+			}
 
-			editor.timeline.moveElement({
-				sourceTrackId: dragState.trackId,
-				targetTrackId: newTrackId,
-				elementId: dragState.elementId,
-				newStartTime: snappedTime,
-				createTrack: { type: sourceTrack.type, index: dropTarget.trackIndex },
-				rippleEnabled: rippleEditingEnabled,
-			});
-			selectElement({ trackId: newTrackId, elementId: dragState.elementId });
-		} else {
-			const targetTrack = tracks[dropTarget.trackIndex];
-			if (targetTrack) {
-				editor.timeline.moveElement({
+			const targetTrackId = dropTarget.isNewTrack
+				? generateUUID()
+				: tracks[dropTarget.trackIndex]?.id;
+			if (!targetTrackId) {
+				endDrag();
+				onSnapPointChange?.(null);
+				return;
+			}
+
+			const commands: Command[] = [
+				new MoveElementCommand({
 					sourceTrackId: dragState.trackId,
-					targetTrackId: targetTrack.id,
+					targetTrackId,
 					elementId: dragState.elementId,
 					newStartTime: snappedTime,
+					createTrack: dropTarget.isNewTrack
+						? { type: sourceTrack.type, index: dropTarget.trackIndex }
+						: undefined,
 					rippleEnabled: rippleEditingEnabled,
-				});
-				if (targetTrack.id !== dragState.trackId) {
-					selectElement({ trackId: targetTrack.id, elementId: dragState.elementId });
+				}),
+			];
+
+			if (movedElement.type === "video") {
+				const currentFreezeFrameStart =
+					dragState.currentFreezeFrameStart ?? movedElement.freezeFrameStart ?? 0;
+				const currentFreezeFrameEnd =
+					dragState.currentFreezeFrameEnd ?? movedElement.freezeFrameEnd ?? 0;
+				if (
+					currentFreezeFrameStart !== (movedElement.freezeFrameStart ?? 0) ||
+					currentFreezeFrameEnd !== (movedElement.freezeFrameEnd ?? 0)
+				) {
+					commands.push(
+						new UpdateElementTrimCommand({
+							elementId: dragState.elementId,
+							trimStart: movedElement.trimStart,
+							trimEnd: movedElement.trimEnd,
+							freezeFrameStart: currentFreezeFrameStart,
+							freezeFrameEnd: currentFreezeFrameEnd,
+						}),
+					);
 				}
 			}
-		}
+
+			editor.command.execute({
+				command:
+					commands.length === 1 ? commands[0] : new BatchCommand(commands),
+			});
+
+			if (targetTrackId !== dragState.trackId) {
+				selectElement({ trackId: targetTrackId, elementId: dragState.elementId });
+			}
 
 			endDrag();
 			onSnapPointChange?.(null);
@@ -563,6 +710,10 @@ export function useElementInteraction({
 				startMouseY: event.clientY,
 				startElementTime: element.startTime,
 				clickOffsetTime,
+				initialFreezeFrameStart:
+					element.type === "video" ? element.freezeFrameStart ?? 0 : undefined,
+				initialFreezeFrameEnd:
+					element.type === "video" ? element.freezeFrameEnd ?? 0 : undefined,
 			};
 			setIsPendingDrag(true);
 		},

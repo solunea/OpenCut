@@ -218,6 +218,8 @@ function buildTrackNodes({
 							trimStart: videoElement.trimStart,
 							trimEnd: videoElement.trimEnd,
 							playbackRate: videoElement.playbackRate,
+							freezeFrameStart: videoElement.freezeFrameStart,
+							freezeFrameEnd: videoElement.freezeFrameEnd,
 							transform: videoElement.transform,
 							animations: videoElement.animations,
 							opacity: videoElement.opacity,

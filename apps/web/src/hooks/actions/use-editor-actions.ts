@@ -210,6 +210,80 @@ export function useEditorActions() {
 	);
 
 	useActionHandler(
+		"freeze-frame",
+		() => {
+			const currentTime = editor.playback.getCurrentTime();
+			const candidateElements =
+				selectedElements.length > 0
+					? selectedElements
+					: getElementsAtTime({
+							tracks: editor.timeline.getTracks(),
+							time: currentTime,
+						});
+			const freezeTarget = editor.timeline
+				.getElementsWithTracks({
+					elements: candidateElements,
+				})
+				.find(
+					({ element }) =>
+						element.type === "video" &&
+						currentTime > element.startTime &&
+						currentTime < element.startTime + element.duration,
+				);
+
+			if (!freezeTarget || freezeTarget.element.type !== "video") {
+				toast.error("Failed to freeze frame", {
+					description: "Place the playhead inside a video clip.",
+				});
+				return;
+			}
+
+			const freezeDuration = 1;
+			const rightSideElements = editor.timeline.splitElements({
+				elements: [
+					{
+						trackId: freezeTarget.track.id,
+						elementId: freezeTarget.element.id,
+					},
+				],
+				splitTime: currentTime,
+			});
+
+			if (rightSideElements.length === 0) {
+				toast.error("Failed to freeze frame", {
+					description: "Move the playhead away from the clip edge.",
+				});
+				return;
+			}
+
+			const [rightClip] = editor.timeline.getElementsWithTracks({
+				elements: rightSideElements,
+			});
+
+			if (!rightClip || rightClip.element.type !== "video") {
+				toast.error("Failed to freeze frame", {
+					description: "The target clip could not be updated.",
+				});
+				return;
+			}
+
+			editor.timeline.updateElementTrim({
+				elementId: rightClip.element.id,
+				trimStart: rightClip.element.trimStart,
+				trimEnd: rightClip.element.trimEnd,
+				freezeFrameStart:
+					(rightClip.element.freezeFrameStart ?? 0) + freezeDuration,
+				freezeFrameEnd: rightClip.element.freezeFrameEnd ?? 0,
+				duration: rightClip.element.duration + freezeDuration,
+				rippleEnabled: true,
+			});
+
+			toast.success("Freeze frame added");
+		},
+		undefined,
+	);
+
+	useActionHandler(
 		"delete-selected",
 		() => {
 			if (selectedKeyframes.length > 0) {

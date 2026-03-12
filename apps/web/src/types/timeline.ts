@@ -111,6 +111,8 @@ export interface VideoElement extends BaseTimelineElement {
 	type: "video";
 	mediaId: string;
 	playbackRate?: number;
+	freezeFrameStart?: number;
+	freezeFrameEnd?: number;
 	muted?: boolean;
 	hidden?: boolean;
 	transform: Transform;
@@ -226,6 +228,8 @@ export interface ElementDragState {
 	clickOffsetTime: number;
 	currentTime: number;
 	currentMouseY: number;
+	currentFreezeFrameStart?: number;
+	currentFreezeFrameEnd?: number;
 }
 
 export interface DropTarget {

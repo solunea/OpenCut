@@ -256,6 +256,8 @@ export function buildVideoElement({
 		trimEnd: 0,
 		sourceDuration: duration,
 		playbackRate: 1,
+		freezeFrameStart: 0,
+		freezeFrameEnd: 0,
 		muted: false,
 		hidden: false,
 		transform: { ...DEFAULT_TRANSFORM },

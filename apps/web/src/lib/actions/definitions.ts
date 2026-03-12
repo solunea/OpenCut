@@ -114,6 +114,10 @@ export const ACTIONS = {
 		category: "editing",
 		args: { transitionType: "string", durationSeconds: "number" },
 	},
+	"freeze-frame": {
+		description: "Freeze current frame at playhead",
+		category: "editing",
+	},
 	"select-all": {
 		description: "Select all elements",
 		category: "selection",

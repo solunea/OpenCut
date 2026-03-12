@@ -21,6 +21,7 @@ import { type TActionWithOptionalArgs, invokeAction } from "@/lib/actions";
 import { cn } from "@/utils/ui";
 import { useTimelineStore } from "@/stores/timeline-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useElementSelection } from "@/hooks/timeline/element/use-element-selection";
 import {
 	Bookmark02Icon,
 	Delete02Icon,
@@ -77,8 +78,18 @@ export function TimelineToolbar({
 
 function ToolbarLeftSection() {
 	const editor = useEditor({ subscribeTo: ["playback", "scenes", "project"] });
+	const { selectedElements } = useElementSelection();
 	const currentTime = editor.playback.getCurrentTime();
 	const isCurrentlyBookmarked = editor.scenes.isBookmarked({ time: currentTime });
+	const hasSelectedFreezableVideo = editor.timeline
+		.getElementsWithTracks({ elements: selectedElements })
+		.some(
+			({ element }) =>
+				element.type === "video" &&
+				currentTime > element.startTime &&
+				currentTime < element.startTime + element.duration,
+		);
+	const canFreeze = selectedElements.length === 0 || hasSelectedFreezableVideo;
 
 	const handleAction = ({
 		action,
@@ -131,9 +142,11 @@ function ToolbarLeftSection() {
 
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={SnowIcon} />}
-					tooltip="Freeze frame (coming soon)"
-					disabled={true}
-					onClick={({ event: _event }) => {}}
+					tooltip="Freeze frame"
+					disabled={!canFreeze}
+					onClick={({ event }) =>
+						handleAction({ action: "freeze-frame", event })
+					}
 				/>
 
 				<ToolbarButton
@@ -149,8 +162,8 @@ function ToolbarLeftSection() {
 				<Tooltip>
 					<ToolbarButton
 						icon={<HugeiconsIcon icon={Bookmark02Icon} />}
-				isActive={isCurrentlyBookmarked}
-					tooltip={isCurrentlyBookmarked ? "Remove bookmark" : "Add bookmark"}
+						isActive={isCurrentlyBookmarked}
+						tooltip={isCurrentlyBookmarked ? "Remove bookmark" : "Add bookmark"}
 						onClick={({ event }) =>
 							handleAction({ action: "toggle-bookmark", event })
 						}
@@ -265,6 +278,7 @@ function ToolbarButton({
 				<Button
 					variant={isActive ? "secondary" : "text"}
 					size="icon"
+					disabled={disabled}
 					onClick={(event) => onClick({ event })}
 					className={cn(
 						"rounded-sm",
