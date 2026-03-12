@@ -1,3 +1,4 @@
+import type { MediaType } from "./assets";
 import type { VisualElement } from "./timeline";
 
 interface BaseDragData {
@@ -7,7 +8,7 @@ interface BaseDragData {
 
 export interface MediaDragData extends BaseDragData {
 	type: "media";
-	mediaType: "image" | "video" | "audio";
+	mediaType: MediaType;
 	targetElementTypes?: ("video" | "image")[];
 }
 

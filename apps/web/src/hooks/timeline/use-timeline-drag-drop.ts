@@ -1,5 +1,9 @@
 import { useState, useCallback, type RefObject } from "react";
 import { useEditor } from "@/hooks/use-editor";
+import {
+	getElementTypeFromMediaType,
+	getTrackTypeFromMediaType,
+} from "@/lib/media/media-utils";
 import { processMediaAssets } from "@/lib/media/processing";
 import { toast } from "sonner";
 import { TIMELINE_CONSTANTS } from "@/constants/timeline-constants";
@@ -62,7 +66,9 @@ export function useTimelineDragDrop({
 			if (dragData.type === "sticker") return "sticker";
 			if (dragData.type === "effect") return "effect";
 			if (dragData.type === "media") {
-				return dragData.mediaType;
+				return getElementTypeFromMediaType({
+					mediaType: dragData.mediaType,
+				});
 			}
 			return null;
 		},
@@ -283,8 +289,9 @@ export function useTimelineDragDrop({
 			const mediaAsset = mediaAssets.find((m) => m.id === dragData.id);
 			if (!mediaAsset) return;
 
-			const trackType: TrackType =
-				dragData.mediaType === "audio" ? "audio" : "video";
+			const trackType: TrackType = getTrackTypeFromMediaType({
+				mediaType: mediaAsset.type,
+			});
 
 			const duration =
 				mediaAsset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
@@ -392,7 +399,7 @@ export function useTimelineDragDrop({
 					asset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 				const currentTracks = editor.timeline.getTracks();
 				const dropTarget = computeDropTarget({
-					elementType: asset.type,
+					elementType: getElementTypeFromMediaType({ mediaType: asset.type }),
 					mouseX,
 					mouseY,
 					tracks: currentTracks,
@@ -403,7 +410,9 @@ export function useTimelineDragDrop({
 					zoomLevel,
 				});
 
-				const trackType: TrackType = asset.type === "audio" ? "audio" : "video";
+				const trackType: TrackType = getTrackTypeFromMediaType({
+					mediaType: asset.type,
+				});
 				const addMediaCmd = new AddMediaAssetCommand(projectId, asset);
 				const assetId = addMediaCmd.getAssetId();
 

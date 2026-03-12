@@ -1,8 +1,10 @@
-import type { TimelineTrack } from "@/types/timeline";
+import type { ZoomEffectTransition, ZoomTransitionState } from "@/types/effects";
+import type { EffectElement, TimelineElement, TimelineTrack } from "@/types/timeline";
 import type { MediaAsset } from "@/types/assets";
 import { RootNode } from "./nodes/root-node";
 import { VideoNode } from "./nodes/video-node";
 import { ImageNode } from "./nodes/image-node";
+import { LottieNode } from "./nodes/lottie-node";
 import { BackgroundImageNode } from "./nodes/background-image-node";
 import { TextNode } from "./nodes/text-node";
 import { StickerNode } from "./nodes/sticker-node";
@@ -16,6 +18,7 @@ import { isMainTrack } from "@/lib/timeline";
 
 const PREVIEW_MAX_IMAGE_SIZE = 2048;
 const BLUR_BACKGROUND_ZOOM_SCALE = 1.4;
+const EFFECT_TIME_EPSILON = 1e-6;
 
 function getVisibleSortedElements({
 	track,
@@ -29,6 +32,138 @@ function getVisibleSortedElements({
 			if (a.startTime !== b.startTime) return a.startTime - b.startTime;
 			return a.id.localeCompare(b.id);
 		});
+}
+
+function resolveNumber({
+	value,
+	fallback,
+}: {
+	value: number | string | boolean | undefined;
+	fallback: number;
+}): number {
+	if (typeof value === "number") {
+		return value;
+	}
+	const parsed = Number.parseFloat(String(value));
+	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function resolveBoolean({
+	value,
+	fallback,
+}: {
+	value: number | string | boolean | undefined;
+	fallback: boolean;
+}): boolean {
+	if (typeof value === "boolean") {
+		return value;
+	}
+
+	if (typeof value === "number") {
+		return value !== 0;
+	}
+
+	if (typeof value === "string") {
+		const normalized = value.trim().toLowerCase();
+		if (normalized === "true") {
+			return true;
+		}
+		if (normalized === "false") {
+			return false;
+		}
+	}
+
+	return fallback;
+}
+
+function clamp01(value: number): number {
+	return Math.min(Math.max(value, 0), 1);
+}
+
+function resolveZoomTransitionState({
+	element,
+}: {
+	element: EffectElement;
+}): ZoomTransitionState {
+	return {
+		zoom: Math.max(resolveNumber({ value: element.params.zoom, fallback: 1.35 }), 1),
+		focusX: clamp01(resolveNumber({ value: element.params.focusX, fallback: 50 }) / 100),
+		focusY: clamp01(resolveNumber({ value: element.params.focusY, fallback: 50 }) / 100),
+		keepFrameFixed: resolveBoolean({
+			value: element.params.keepFrameFixed,
+			fallback: true,
+		}),
+	};
+}
+
+function isAdjacentEffectBoundary({
+	left,
+	right,
+}: {
+	left: EffectElement;
+	right: EffectElement;
+}): boolean {
+	return Math.abs(left.startTime + left.duration - right.startTime) <= EFFECT_TIME_EPSILON;
+}
+
+function resolveAdjacentZoomState({
+	currentElement,
+	adjacentElement,
+	isPrevious,
+}: {
+	currentElement: EffectElement;
+	adjacentElement: TimelineElement | undefined;
+	isPrevious: boolean;
+}): ZoomTransitionState | undefined {
+	if (adjacentElement?.type !== "effect" || adjacentElement.effectType !== "zoom") {
+		return undefined;
+	}
+
+	const isAdjacent = isPrevious
+		? isAdjacentEffectBoundary({
+				left: adjacentElement,
+				right: currentElement,
+			})
+		: isAdjacentEffectBoundary({
+				left: currentElement,
+				right: adjacentElement,
+			});
+
+	if (!isAdjacent) {
+		return undefined;
+	}
+
+	return resolveZoomTransitionState({ element: adjacentElement });
+}
+
+function resolveZoomTransition({
+	elements,
+	index,
+}: {
+	elements: TimelineElement[];
+	index: number;
+}): ZoomEffectTransition | undefined {
+	const currentElement = elements[index];
+	if (currentElement?.type !== "effect" || currentElement.effectType !== "zoom") {
+		return undefined;
+	}
+
+	const previous = resolveAdjacentZoomState({
+		currentElement,
+		adjacentElement: elements[index - 1],
+		isPrevious: true,
+	});
+	const next = resolveAdjacentZoomState({
+		currentElement,
+		adjacentElement: elements[index + 1],
+		isPrevious: false,
+	});
+
+	if (!previous && !next) {
+		return undefined;
+	}
+
+	return { previous, next };
 }
 
 function buildTrackNodes({
@@ -47,7 +182,8 @@ function buildTrackNodes({
 	for (const track of tracks) {
 		const elements = getVisibleSortedElements({ track });
 
-		for (const element of elements) {
+		for (let index = 0; index < elements.length; index += 1) {
+			const element = elements[index];
 			if (element.type === "effect") {
 				nodes.push(
 					new EffectLayerNode({
@@ -55,6 +191,7 @@ function buildTrackNodes({
 						effectParams: element.params,
 						timeOffset: element.startTime,
 						duration: element.duration,
+						zoomTransition: resolveZoomTransition({ elements, index }),
 					}),
 				);
 				continue;
@@ -107,6 +244,24 @@ function buildTrackNodes({
 							...(isPreview && {
 								maxSourceSize: PREVIEW_MAX_IMAGE_SIZE,
 							}),
+						}),
+					);
+				}
+				if (mediaAsset.type === "lottie") {
+					nodes.push(
+						new LottieNode({
+							mediaId: mediaAsset.id,
+							url: mediaAsset.url,
+							duration: element.duration,
+							timeOffset: element.startTime,
+							trimStart: element.trimStart,
+							trimEnd: element.trimEnd,
+							transform: element.transform,
+							animations: element.animations,
+							opacity: element.opacity,
+							blendMode: element.blendMode,
+							effects: element.effects,
+							fps: mediaAsset.fps,
 						}),
 					);
 				}

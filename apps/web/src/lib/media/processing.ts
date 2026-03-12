@@ -1,6 +1,11 @@
 import { toast } from "sonner";
 import type { MediaAsset } from "@/types/assets";
 import { getMediaTypeFromFile } from "@/lib/media/media-utils";
+import {
+	getLottieMetadata,
+	isLottieJsonFile,
+	normalizeLottieFile,
+} from "./lottie";
 import { getVideoInfo } from "./mediabunny";
 import { Input, ALL_FORMATS, BlobSource, VideoSampleSink } from "mediabunny";
 
@@ -158,12 +163,21 @@ export async function processMediaAssets({
 	const total = fileArray.length;
 	let completed = 0;
 
-	for (const file of fileArray) {
-		const fileType = getMediaTypeFromFile({ file });
+	for (const inputFile of fileArray) {
+		let file = inputFile;
+		let fileType = getMediaTypeFromFile({ file });
+
+		if (!fileType && (await isLottieJsonFile({ file }))) {
+			fileType = "lottie";
+		}
 
 		if (!fileType) {
 			toast.error(`Unsupported file type: ${file.name}`);
 			continue;
+		}
+
+		if (fileType === "lottie") {
+			file = await normalizeLottieFile({ file });
 		}
 
 		const url = URL.createObjectURL(file);
@@ -199,6 +213,13 @@ export async function processMediaAssets({
 			} else if (fileType === "audio") {
 				// For audio, we don't set width/height/fps (they'll be undefined)
 				duration = await getMediaDuration({ file });
+			} else if (fileType === "lottie") {
+				const metadata = await getLottieMetadata({ url });
+				duration = metadata.duration;
+				width = metadata.width;
+				height = metadata.height;
+				fps = metadata.fps;
+				thumbnailUrl = metadata.thumbnailUrl;
 			}
 
 			processedAssets.push({

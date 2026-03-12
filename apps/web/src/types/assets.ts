@@ -1,6 +1,6 @@
 import type { MediaAssetData } from "@/services/storage/types";
 
-export type MediaType = "image" | "video" | "audio";
+export type MediaType = "image" | "video" | "audio" | "lottie";
 
 export interface MediaAsset
 	extends Omit<MediaAssetData, "size" | "lastModified"> {

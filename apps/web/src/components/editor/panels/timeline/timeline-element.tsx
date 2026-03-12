@@ -770,7 +770,10 @@ const ELEMENT_CONTENT_RENDERERS: Record<
 		);
 		return renderTiledMedia({
 			element: imageElement,
-			imageUrl: mediaAsset?.url,
+			imageUrl:
+				mediaAsset?.type === "lottie"
+					? mediaAsset.thumbnailUrl
+					: mediaAsset?.url,
 			track,
 		});
 	},

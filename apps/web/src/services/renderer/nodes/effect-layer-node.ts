@@ -1,5 +1,5 @@
 import type { CanvasRenderer } from "../canvas-renderer";
-import type { EffectParamValues } from "@/types/effects";
+import type { EffectParamValues, ZoomEffectTransition } from "@/types/effects";
 import { BaseNode } from "./base-node";
 import { applyRendererEffect } from "../effect-applier";
 
@@ -10,6 +10,7 @@ export type EffectLayerNodeParams = {
 	effectParams: EffectParamValues;
 	timeOffset: number;
 	duration: number;
+	zoomTransition?: ZoomEffectTransition;
 };
 
 function isInRange({
@@ -63,6 +64,7 @@ export class EffectLayerNode extends BaseNode<EffectLayerNodeParams> {
 			localTime,
 			duration: this.params.duration,
 			progress,
+			zoomTransition: this.params.zoomTransition,
 		});
 
 		renderer.context.save();

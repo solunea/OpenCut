@@ -9,6 +9,18 @@ export type EffectParamType = "number" | "boolean" | "select" | "color";
 
 export type EffectParamValues = Record<string, number | string | boolean>;
 
+export interface ZoomTransitionState {
+	zoom: number;
+	focusX: number;
+	focusY: number;
+	keepFrameFixed: boolean;
+}
+
+export interface ZoomEffectTransition {
+	previous?: ZoomTransitionState;
+	next?: ZoomTransitionState;
+}
+
 interface BaseEffectParamDefinition {
 	key: string;
 	label: string;
@@ -53,6 +65,7 @@ export interface WebGLEffectPass {
 		localTime?: number;
 		duration?: number;
 		progress?: number;
+		zoomTransition?: ZoomEffectTransition;
 	}): Record<string, number | number[]>;
 }
 

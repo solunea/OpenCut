@@ -1,6 +1,11 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { useEditor } from "@/hooks/use-editor";
+import { isLottieJsonFile } from "@/lib/media/lottie";
+import {
+	getMediaTypeFromFile,
+	getTrackTypeFromMediaType,
+} from "@/lib/media/media-utils";
 import { processMediaAssets } from "@/lib/media/processing";
 import { buildElementFromMedia } from "@/lib/timeline/element-utils";
 import { AddMediaAssetCommand } from "@/lib/commands/media";
@@ -8,28 +13,25 @@ import { InsertElementCommand } from "@/lib/commands/timeline";
 import { BatchCommand } from "@/lib/commands";
 import { TIMELINE_CONSTANTS } from "@/constants/timeline-constants";
 import { isTypableDOMElement } from "@/utils/browser";
-import type { MediaType } from "@/types/assets";
 
-const MEDIA_MIME_PREFIXES: MediaType[] = ["image", "video", "audio"];
-
-function isMediaMimeType({ type }: { type: string }): boolean {
-	return MEDIA_MIME_PREFIXES.some((prefix) => type.startsWith(`${prefix}/`));
-}
-
-function extractMediaFilesFromClipboard({
+async function extractMediaFilesFromClipboard({
 	clipboardData,
 }: {
 	clipboardData: DataTransfer | null;
-}): File[] {
+}): Promise<File[]> {
 	if (!clipboardData?.items) return [];
 
 	const files: File[] = [];
 	for (const item of clipboardData.items) {
 		if (item.kind !== "file") continue;
-		if (!isMediaMimeType({ type: item.type })) continue;
 
 		const file = item.getAsFile();
-		if (file) files.push(file);
+		if (!file) continue;
+
+		const mediaType = getMediaTypeFromFile({ file });
+		if (mediaType || (await isLottieJsonFile({ file }))) {
+			files.push(file);
+		}
 	}
 	return files;
 }
@@ -44,7 +46,7 @@ export function usePasteMedia() {
 				return;
 			}
 
-			const files = extractMediaFilesFromClipboard({
+			const files = await extractMediaFilesFromClipboard({
 				clipboardData: event.clipboardData,
 			});
 			if (files.length === 0) return;
@@ -66,7 +68,9 @@ export function usePasteMedia() {
 					const assetId = addMediaCmd.getAssetId();
 					const duration =
 						asset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
-					const trackType = asset.type === "audio" ? "audio" : "video";
+					const trackType = getTrackTypeFromMediaType({
+						mediaType: asset.type,
+					});
 
 					const element = buildElementFromMedia({
 						mediaId: assetId,

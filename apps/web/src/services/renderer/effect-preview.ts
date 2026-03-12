@@ -108,6 +108,8 @@ export function renderPreview({
 		Object.keys(params).length > 0
 			? params
 			: buildDefaultParams({ effectType });
+	const previewDuration = definition.type === "zoom" ? 100 : 1;
+	const previewProgress = definition.type === "zoom" ? 0.5 : 1;
 
 	const result = applyRendererEffect({
 		source,
@@ -116,8 +118,8 @@ export function renderPreview({
 		effectType: definition.type,
 		effectParams: resolvedParams,
 		localTime: 0,
-		duration: 1,
-		progress: 1,
+		duration: previewDuration,
+		progress: previewProgress,
 	});
 
 	const targetCtx = targetCanvas.getContext(
