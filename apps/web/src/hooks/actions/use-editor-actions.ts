@@ -275,7 +275,7 @@ export function useEditorActions() {
 					(rightClip.element.freezeFrameStart ?? 0) + freezeDuration,
 				freezeFrameEnd: rightClip.element.freezeFrameEnd ?? 0,
 				duration: rightClip.element.duration + freezeDuration,
-				rippleEnabled: true,
+				rippleEnabled: rippleEditingEnabled,
 			});
 
 			toast.success("Freeze frame added");

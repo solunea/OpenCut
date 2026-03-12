@@ -20,3 +20,4 @@ bun.lockb
 .cursor/rules/file-structure.mdc
 .vercel
 .env*.local
+*.tsbuildinfo

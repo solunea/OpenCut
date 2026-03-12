@@ -96,7 +96,7 @@ function resolveZoomMotionVariant({
 }: {
 	effectParams: EffectParamValues;
 }): ZoomMotionVariant {
-	return effectParams.motion === "soft" ? "soft" : "punchy";
+	return effectParams.motion === "punchy" ? "punchy" : "soft";
 }
 
 function resolveZoomMotionProfile({
