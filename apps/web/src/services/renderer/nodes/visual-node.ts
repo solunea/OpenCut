@@ -257,7 +257,7 @@ export abstract class VisualNode<
 	}
 
 	protected isInRange({ time }: { time: number }): boolean {
-		const timelineLocalTime = Math.max(0, time - this.params.timeOffset);
+		const timelineLocalTime = time - this.params.timeOffset;
 		const freezeFrameStart = this.params.freezeFrameStart ?? 0;
 		const freezeFrameEnd = this.params.freezeFrameEnd ?? 0;
 		const visibleTimelineDuration = getVisibleTimelineDuration({
