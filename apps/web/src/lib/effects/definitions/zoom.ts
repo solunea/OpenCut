@@ -278,7 +278,10 @@ export function resolveZoomRenderState({
 
 	const exitStrength =
 		exitSeconds > 0
-			? motionProfile.exitStrength((resolvedDuration - localTime) / exitSeconds)
+			? 1 -
+				motionProfile.exitStrength(
+					1 - (resolvedDuration - localTime) / exitSeconds,
+				)
 			: 1;
 
 	if (!hasPrevious) {
