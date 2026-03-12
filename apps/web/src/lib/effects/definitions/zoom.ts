@@ -348,7 +348,7 @@ export const zoomEffectDefinition: EffectDefinition = {
 			key: "ease",
 			label: "Ease (s)",
 			type: "number",
-			default: 0.4,
+			default: 1,
 			min: 0,
 			max: 5,
 			step: 0.05,
