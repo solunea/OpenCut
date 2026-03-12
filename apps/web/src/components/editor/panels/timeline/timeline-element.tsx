@@ -220,6 +220,8 @@ export function TimelineElement({
 	const {
 		handleResizeStart,
 		isResizing,
+		currentTrimStart,
+		currentTrimEnd,
 		currentStartTime,
 		currentDuration,
 		currentFreezeFrameStart,
@@ -248,6 +250,8 @@ export function TimelineElement({
 			: element.startTime;
 	const displayedStartTime = isResizing ? currentStartTime : elementStartTime;
 	const displayedDuration = isResizing ? currentDuration : element.duration;
+	const displayedTrimStart = isResizing ? currentTrimStart : element.trimStart;
+	const displayedTrimEnd = isResizing ? currentTrimEnd : element.trimEnd;
 	const displayedFreezeFrameStart =
 		element.type === "video"
 			? isResizing
@@ -322,6 +326,8 @@ export function TimelineElement({
 						handleResizeStart={handleResizeStart}
 						isDropTarget={isDropTarget}
 						displayedDuration={displayedDuration}
+						displayedTrimStart={displayedTrimStart}
+						displayedTrimEnd={displayedTrimEnd}
 						displayedFreezeFrameStart={displayedFreezeFrameStart}
 						displayedFreezeFrameEnd={displayedFreezeFrameEnd}
 					/>
@@ -409,6 +415,8 @@ function ElementInner({
 	handleResizeStart,
 	isDropTarget = false,
 	displayedDuration,
+	displayedTrimStart,
+	displayedTrimEnd,
 	displayedFreezeFrameStart,
 	displayedFreezeFrameEnd,
 }: {
@@ -430,6 +438,8 @@ function ElementInner({
 	}) => void;
 	isDropTarget?: boolean;
 	displayedDuration: number;
+	displayedTrimStart: number;
+	displayedTrimEnd: number;
 	displayedFreezeFrameStart: number;
 	displayedFreezeFrameEnd: number;
 }) {
@@ -474,6 +484,9 @@ function ElementInner({
 							element={element}
 							track={track}
 							isSelected={isSelected}
+							displayedDuration={displayedDuration}
+							displayedTrimStart={displayedTrimStart}
+							displayedTrimEnd={displayedTrimEnd}
 							displayedFreezeFrameStart={displayedFreezeFrameStart}
 							displayedFreezeFrameEnd={displayedFreezeFrameEnd}
 						/>
@@ -629,6 +642,9 @@ interface ElementContentProps {
 	element: TimelineElementType;
 	track: TimelineTrack;
 	isSelected: boolean;
+	displayedDuration: number;
+	displayedTrimStart: number;
+	displayedTrimEnd: number;
 	displayedFreezeFrameStart?: number;
 	displayedFreezeFrameEnd?: number;
 }
@@ -710,27 +726,63 @@ function FreezeFrameOverlay({
 	);
 }
 
+function LottieLoopOverlay({
+	loopExtensionEnd,
+	displayedDuration,
+}: {
+	loopExtensionEnd: number;
+	displayedDuration: number;
+}) {
+	if (displayedDuration <= 0 || loopExtensionEnd <= 0) {
+		return null;
+	}
+
+	const rightWidthPercent = (loopExtensionEnd / displayedDuration) * 100;
+
+	return (
+		<div className="pointer-events-none absolute inset-0 z-10">
+			<div
+				className="absolute inset-y-0 right-0 overflow-hidden border-l border-white/40 bg-white/14"
+				style={{
+					width: `${rightWidthPercent}%`,
+					backgroundImage:
+						"repeating-linear-gradient(135deg, rgba(255,255,255,0.16) 0 8px, rgba(255,255,255,0.02) 8px 16px)",
+				}}
+			>
+				{rightWidthPercent >= 14 && (
+					<div className="flex size-full items-center justify-center px-2">
+						<span className="truncate text-[10px] font-medium uppercase tracking-wide text-white/90">
+							Loop
+						</span>
+					</div>
+				)}
+			</div>
+		</div>
+	);
+}
+
 export function renderTiledMedia({
 	element,
 	imageUrl,
 	track,
+	clipDuration,
 	displayedFreezeFrameStart,
 	displayedFreezeFrameEnd,
+	showTransparencyGrid = false,
+	showTitle = false,
+	loopExtensionEnd = 0,
 }: {
 	element: VisualElement;
 	imageUrl: string | undefined;
 	track: ElementContentProps["track"];
+	clipDuration?: number;
 	displayedFreezeFrameStart?: number;
 	displayedFreezeFrameEnd?: number;
+	showTransparencyGrid?: boolean;
+	showTitle?: boolean;
+	loopExtensionEnd?: number;
 }): ReactNode {
-	if (!imageUrl) {
-		return (
-			<span className="text-foreground/80 truncate text-xs">
-				{element.name}
-			</span>
-		);
-	}
-
+	const resolvedClipDuration = clipDuration ?? element.duration;
 	const trackHeight = getTrackHeight({ type: track.type });
 	const tileWidth = trackHeight * (16 / 9);
 	const freezeFrameStart =
@@ -746,28 +798,62 @@ export function renderTiledMedia({
 				})
 			: 0;
 	const visibleTimelineDuration = getVisibleTimelineDuration({
-		duration: element.duration,
+		duration: resolvedClipDuration,
 		freezeFrameStart,
 		freezeFrameEnd,
 	});
 	const visibleWidthPercent =
-		element.duration > 0 ? (visibleTimelineDuration / element.duration) * 100 : 100;
+		resolvedClipDuration > 0
+			? (visibleTimelineDuration / resolvedClipDuration) * 100
+			: 100;
 	const leftOffsetPercent =
-		element.duration > 0 ? (freezeFrameStart / element.duration) * 100 : 0;
+		resolvedClipDuration > 0 ? (freezeFrameStart / resolvedClipDuration) * 100 : 0;
+	const shouldShowGrid = showTransparencyGrid || !imageUrl;
+	const shouldShowTitle = showTitle || !imageUrl;
 
 	return (
-		<div
-			className="absolute inset-y-0"
-			style={{
-				backgroundImage: `url(${imageUrl})`,
-				backgroundRepeat: "repeat-x",
-				backgroundSize: `${tileWidth}px ${trackHeight}px`,
-				backgroundPosition: "left center",
-				left: `${leftOffsetPercent}%`,
-				width: `${visibleWidthPercent}%`,
-				pointerEvents: "none",
-			}}
-		/>
+		<>
+			{shouldShowGrid && (
+				<div
+					className="absolute inset-y-0"
+					style={{
+						backgroundColor: "rgba(255,255,255,0.06)",
+						backgroundImage:
+							"linear-gradient(45deg, rgba(255,255,255,0.12) 25%, transparent 25%), linear-gradient(-45deg, rgba(255,255,255,0.12) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.12) 75%), linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.12) 75%)",
+						backgroundSize: "16px 16px",
+						backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
+						left: `${leftOffsetPercent}%`,
+						width: `${visibleWidthPercent}%`,
+						pointerEvents: "none",
+					}}
+				/>
+			)}
+			{imageUrl && (
+				<div
+					className="absolute inset-y-0"
+					style={{
+						backgroundImage: `url(${imageUrl})`,
+						backgroundRepeat: "repeat-x",
+						backgroundSize: `${tileWidth}px ${trackHeight}px`,
+						backgroundPosition: "left center",
+						left: `${leftOffsetPercent}%`,
+						width: `${visibleWidthPercent}%`,
+						pointerEvents: "none",
+					}}
+				/>
+			)}
+			{shouldShowTitle && (
+				<div className="absolute inset-0 flex items-center justify-center px-2 pointer-events-none">
+					<span className="truncate text-xs text-white/90">{element.name}</span>
+				</div>
+			)}
+			{loopExtensionEnd > 0 && (
+				<LottieLoopOverlay
+					loopExtensionEnd={loopExtensionEnd}
+					displayedDuration={resolvedClipDuration}
+				/>
+			)}
+		</>
 	);
 }
 
@@ -893,6 +979,7 @@ const ELEMENT_CONTENT_RENDERERS: Record<
 		element,
 		track,
 		mediaAssets,
+		displayedDuration,
 		displayedFreezeFrameStart,
 		displayedFreezeFrameEnd,
 	}) => {
@@ -907,11 +994,19 @@ const ELEMENT_CONTENT_RENDERERS: Record<
 			element: videoElement,
 			imageUrl: mediaAsset?.thumbnailUrl,
 			track,
+			clipDuration: displayedDuration,
 			displayedFreezeFrameStart,
 			displayedFreezeFrameEnd,
 		});
 	},
-	image: ({ element, track, mediaAssets }) => {
+	image: ({
+	element,
+	track,
+	mediaAssets,
+	displayedDuration,
+	displayedTrimStart,
+	displayedTrimEnd,
+}) => {
 		const imageElement = element as Extract<
 			TimelineElementType,
 			{ type: "image" }
@@ -919,18 +1014,49 @@ const ELEMENT_CONTENT_RENDERERS: Record<
 		const mediaAsset = mediaAssets.find(
 			(asset) => asset.id === imageElement.mediaId,
 		);
+		const isLottie = mediaAsset?.type === "lottie";
+		const sourceDuration =
+			typeof imageElement.sourceDuration === "number" &&
+			Number.isFinite(imageElement.sourceDuration)
+				? imageElement.sourceDuration
+				: isLottie &&
+					  typeof mediaAsset?.duration === "number" &&
+					  Number.isFinite(mediaAsset.duration)
+					? mediaAsset.duration
+				: undefined;
+		const visibleSourceDuration =
+			typeof sourceDuration === "number"
+				? Math.max(0, sourceDuration - displayedTrimStart - displayedTrimEnd)
+				: undefined;
+		const loopExtensionEnd =
+			isLottie && typeof visibleSourceDuration === "number"
+				? Math.max(0, displayedDuration - visibleSourceDuration)
+				: 0;
 		return renderTiledMedia({
 			element: imageElement,
 			imageUrl:
-				mediaAsset?.type === "lottie"
+				isLottie
 					? mediaAsset.thumbnailUrl
 					: mediaAsset?.url,
 			track,
+			clipDuration: displayedDuration,
+			showTransparencyGrid: isLottie,
+			showTitle: isLottie,
+			loopExtensionEnd,
 		});
 	},
 };
 
-function ElementContent({ element, track, isSelected }: ElementContentProps) {
+function ElementContent({
+	element,
+	track,
+	isSelected,
+	displayedDuration,
+	displayedTrimStart,
+	displayedTrimEnd,
+	displayedFreezeFrameStart,
+	displayedFreezeFrameEnd,
+}: ElementContentProps) {
 	const editor = useEditor();
 	const renderer = ELEMENT_CONTENT_RENDERERS[element.type];
 	return (
@@ -939,6 +1065,11 @@ function ElementContent({ element, track, isSelected }: ElementContentProps) {
 				element,
 				track,
 				isSelected,
+				displayedDuration,
+				displayedTrimStart,
+				displayedTrimEnd,
+				displayedFreezeFrameStart,
+				displayedFreezeFrameEnd,
 				mediaAssets: editor.media.getAssets(),
 			})}
 		</>

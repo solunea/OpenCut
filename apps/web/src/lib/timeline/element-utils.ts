@@ -279,11 +279,13 @@ export function buildImageElement({
 	name,
 	duration,
 	startTime,
+	sourceDuration,
 }: {
 	mediaId: string;
 	name: string;
 	duration: number;
 	startTime: number;
+	sourceDuration?: number;
 }): CreateImageElement {
 	return {
 		type: "image",
@@ -293,6 +295,7 @@ export function buildImageElement({
 		startTime,
 		trimStart: 0,
 		trimEnd: 0,
+		sourceDuration,
 		hidden: false,
 		transform: { ...DEFAULT_TRANSFORM },
 		opacity: DEFAULT_OPACITY,
@@ -360,8 +363,15 @@ export function buildElementFromMedia({
 		case "video":
 			return buildVideoElement({ mediaId, name, duration, startTime });
 		case "image":
-		case "lottie":
 			return buildImageElement({ mediaId, name, duration, startTime });
+		case "lottie":
+			return buildImageElement({
+				mediaId,
+				name,
+				duration,
+				startTime,
+				sourceDuration: duration,
+			});
 	}
 }
 

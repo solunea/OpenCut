@@ -151,6 +151,62 @@ async function renderFrame({
 	await waitForAnimationFrame();
 }
 
+function hasVisiblePixels({
+	canvas,
+}: {
+	canvas: HTMLCanvasElement;
+}): boolean {
+	const context = canvas.getContext("2d", { willReadFrequently: true });
+	if (!context) {
+		return true;
+	}
+
+	const { width, height } = canvas;
+	if (width <= 0 || height <= 0) {
+		return false;
+	}
+
+	const imageData = context.getImageData(0, 0, width, height).data;
+	for (let index = 3; index < imageData.length; index += 4) {
+		if (imageData[index] !== 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+async function renderRepresentativeFrame({
+	player,
+	canvas,
+	totalFrames,
+}: {
+	player: DotLottiePlayer;
+	canvas: HTMLCanvasElement;
+	totalFrames: number;
+}): Promise<void> {
+	const normalizedTotalFrames = Math.max(1, Math.round(totalFrames || 1));
+	const candidateFrames = Array.from(
+		new Set([
+			0,
+			Math.round((normalizedTotalFrames - 1) * 0.1),
+			Math.round((normalizedTotalFrames - 1) * 0.25),
+			Math.round((normalizedTotalFrames - 1) * 0.5),
+			Math.round((normalizedTotalFrames - 1) * 0.75),
+			normalizedTotalFrames - 1,
+		]),
+	).filter((frame) => frame >= 0 && frame < normalizedTotalFrames);
+
+	for (const frame of candidateFrames) {
+		await renderFrame({ player, frame });
+		if (hasVisiblePixels({ canvas })) {
+			return;
+		}
+	}
+
+	await renderFrame({ player, frame: 0 });
+}
+
 async function createRenderEntry({ src }: { src: string }): Promise<LottieRenderEntry> {
 	const { DotLottie } = await getDotLottieModule();
 	const canvas = createCanvas({ width: 1, height: 1 });
@@ -174,7 +230,14 @@ async function createRenderEntry({ src }: { src: string }): Promise<LottieRender
 	canvas.width = width;
 	canvas.height = height;
 	player.resize();
-	await renderFrame({ player, frame: 0 });
+	await renderRepresentativeFrame({
+		player,
+		canvas,
+		totalFrames:
+			typeof player.totalFrames === "number" && Number.isFinite(player.totalFrames)
+				? player.totalFrames
+				: 0,
+	});
 
 	return {
 		player,
@@ -309,11 +372,13 @@ export async function getLottieFrameCanvas({
 	url,
 	time,
 	fps,
+	duration,
 }: {
 	mediaId: string;
 	url: string;
 	time: number;
 	fps?: number;
+	duration?: number;
 }): Promise<{
 	canvas: HTMLCanvasElement;
 	width: number;
@@ -327,10 +392,26 @@ export async function getLottieFrameCanvas({
 					totalFrames: entry.totalFrames,
 					duration: entry.duration,
 				});
+	const resolvedDuration =
+		typeof duration === "number" && Number.isFinite(duration) && duration > 0
+			? duration
+			: typeof entry.duration === "number" &&
+					  Number.isFinite(entry.duration) &&
+					  entry.duration > 0
+				? entry.duration
+				: undefined;
 
 	const totalFrames = Math.max(1, Math.round(entry.totalFrames || 1));
 	const frame =
-		resolvedFps && resolvedFps > 0
+		typeof resolvedDuration === "number"
+			? Math.min(
+					totalFrames - 1,
+					Math.max(
+						0,
+						Math.floor((Math.max(0, time) / resolvedDuration) * totalFrames),
+					),
+				)
+			: resolvedFps && resolvedFps > 0
 			? Math.min(totalFrames - 1, Math.max(0, Math.floor(time * resolvedFps)))
 			: 0;
 

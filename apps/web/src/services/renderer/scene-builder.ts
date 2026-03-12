@@ -258,6 +258,11 @@ function buildTrackNodes({
 							timeOffset: element.startTime,
 							trimStart: element.trimStart,
 							trimEnd: element.trimEnd,
+							sourceDuration:
+								typeof element.sourceDuration === "number" &&
+								Number.isFinite(element.sourceDuration)
+									? element.sourceDuration
+									: mediaAsset.duration,
 							transform: element.transform,
 							animations: element.animations,
 							opacity: element.opacity,

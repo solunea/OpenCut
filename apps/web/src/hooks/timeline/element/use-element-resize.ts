@@ -120,8 +120,23 @@ export function useTimelineElementResize({
 	};
 
 	const canExtendElementDuration = useCallback(() => {
-		return element.sourceDuration == null || element.type === "video";
-	}, [element.sourceDuration, element.type]);
+		if (element.type === "video") {
+			return true;
+		}
+
+		if (element.sourceDuration == null) {
+			return true;
+		}
+
+		if (element.type === "image") {
+			const mediaAsset = editor.media
+				.getAssets()
+				.find((asset) => asset.id === element.mediaId);
+			return mediaAsset?.type === "lottie";
+		}
+
+		return false;
+	}, [editor.media, element]);
 
 	const updateTrimFromMouseMove = useCallback(
 		({ clientX }: { clientX: number }) => {
@@ -173,17 +188,29 @@ export function useTimelineElementResize({
 
 			const otherElements = track.elements.filter(({ id }) => id !== element.id);
 			const initialEndTime = resizing.initialStartTime + resizing.initialDuration;
+			const lottieMediaAsset =
+				element.type === "image"
+					? editor.media
+							.getAssets()
+							.find((asset) => asset.id === element.mediaId && asset.type === "lottie")
+					: undefined;
 			const playbackRate =
 				"playbackRate" in element
 					? normalizePlaybackRate({ playbackRate: element.playbackRate })
 					: 1;
 			const sourceDuration = getSourceDuration({
-				sourceDuration: element.sourceDuration,
+				sourceDuration:
+					typeof element.sourceDuration === "number" &&
+					Number.isFinite(element.sourceDuration)
+						? element.sourceDuration
+						: lottieMediaAsset?.duration,
 				trimStart: resizing.initialTrimStart,
 				trimEnd: resizing.initialTrimEnd,
 				duration: resizing.initialDuration,
 				playbackRate,
 			});
+			const isLottieImageElement =
+				element.type === "image" && lottieMediaAsset != null;
 
 			const rightNeighborBound =
 				resizing.side === "right"
@@ -412,6 +439,48 @@ export function useTimelineElementResize({
 					}
 				}
 			} else {
+				if (isLottieImageElement && canExtendElementDuration()) {
+					const maxAllowedDuration = Number.isFinite(rightNeighborBound)
+						? rightNeighborBound - resizing.initialStartTime
+						: Infinity;
+					const visibleSourceDuration = Math.max(
+						0,
+						sourceDuration - resizing.initialTrimStart - resizing.initialTrimEnd,
+					);
+					const visibleTimelineDuration =
+						visibleSourceDuration / playbackRate;
+					const targetDuration = snapTimeToFrame({
+						time: Math.min(
+							maxAllowedDuration,
+							Math.max(
+								minDurationSeconds,
+								resizing.initialDuration + deltaTime,
+							),
+						),
+						fps: projectFps,
+					});
+
+					if (targetDuration >= visibleTimelineDuration) {
+						setCurrentDuration(targetDuration);
+						setCurrentTrimEnd(resizing.initialTrimEnd);
+						currentDurationRef.current = targetDuration;
+						currentTrimEndRef.current = resizing.initialTrimEnd;
+						return;
+					}
+
+					const nextTrimEnd = Math.max(
+						0,
+						sourceDuration -
+							resizing.initialTrimStart -
+							targetDuration * playbackRate,
+					);
+					setCurrentDuration(targetDuration);
+					setCurrentTrimEnd(nextTrimEnd);
+					currentDurationRef.current = targetDuration;
+					currentTrimEndRef.current = nextTrimEnd;
+					return;
+				}
+
 				const newTrimEnd = resizing.initialTrimEnd - deltaTime * playbackRate;
 				const maxAllowedDuration = Number.isFinite(rightNeighborBound)
 					? rightNeighborBound - resizing.initialStartTime
