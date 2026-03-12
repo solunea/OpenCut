@@ -24,7 +24,7 @@ function isInRange({
 }): boolean {
 	return (
 		time >= timeOffset - TIME_EPSILON &&
-		time < timeOffset + duration + TIME_EPSILON
+		time < timeOffset + duration
 	);
 }
 
