@@ -69,6 +69,58 @@ function easeInOutSine(value: number): number {
 	return -(Math.cos(Math.PI * t) - 1) / 2;
 }
 
+function easeOutCubic(value: number): number {
+	const t = clamp01(value);
+	return 1 - (1 - t) ** 3;
+}
+
+function easeOutBack(value: number): number {
+	const t = clamp01(value);
+	const overshoot = 1.05;
+	const c1 = overshoot;
+	const c3 = c1 + 1;
+	return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
+}
+
+type ZoomMotionVariant = "soft" | "punchy";
+
+type ZoomMotionProfile = {
+	entryStrength: (value: number) => number;
+	exitStrength: (value: number) => number;
+	zoomTransition: (value: number) => number;
+	focusTransition: (value: number) => number;
+};
+
+function resolveZoomMotionVariant({
+	effectParams,
+}: {
+	effectParams: EffectParamValues;
+}): ZoomMotionVariant {
+	return effectParams.motion === "soft" ? "soft" : "punchy";
+}
+
+function resolveZoomMotionProfile({
+	variant,
+}: {
+	variant: ZoomMotionVariant;
+}): ZoomMotionProfile {
+	if (variant === "soft") {
+		return {
+			entryStrength: easeOutCubic,
+			exitStrength: easeInOutSine,
+			zoomTransition: easeInOutSine,
+			focusTransition: easeInOutSine,
+		};
+	}
+
+	return {
+		entryStrength: easeOutBack,
+		exitStrength: easeOutCubic,
+		zoomTransition: easeOutBack,
+		focusTransition: easeOutCubic,
+	};
+}
+
 function lerp({
 	leftValue,
 	rightValue,
@@ -177,6 +229,9 @@ export function resolveZoomRenderState({
 	zoomTransition?: ZoomEffectTransition;
 }): ZoomTransitionState & { strength: number } {
 	const targetState = resolveZoomTransitionState({ effectParams });
+	const motionProfile = resolveZoomMotionProfile({
+		variant: resolveZoomMotionVariant({ effectParams }),
+	});
 	const previousState = zoomTransition?.previous;
 	const nextState = zoomTransition?.next;
 	const hasPrevious =
@@ -197,22 +252,24 @@ export function resolveZoomRenderState({
 	});
 
 	if (hasPrevious && previousState && entrySeconds > 0 && localTime < entrySeconds) {
-		const transitionProgress = easeInOutSine(localTime / entrySeconds);
+		const normalizedTransitionTime = localTime / entrySeconds;
+		const zoomTransitionProgress = motionProfile.zoomTransition(normalizedTransitionTime);
+		const focusTransitionProgress = motionProfile.focusTransition(normalizedTransitionTime);
 		return {
 			zoom: lerp({
 				leftValue: previousState.zoom,
 				rightValue: targetState.zoom,
-				progress: transitionProgress,
+				progress: zoomTransitionProgress,
 			}),
 			focusX: lerp({
 				leftValue: previousState.focusX,
 				rightValue: targetState.focusX,
-				progress: transitionProgress,
+				progress: focusTransitionProgress,
 			}),
 			focusY: lerp({
 				leftValue: previousState.focusY,
 				rightValue: targetState.focusY,
-				progress: transitionProgress,
+				progress: focusTransitionProgress,
 			}),
 			keepFrameFixed: targetState.keepFrameFixed,
 			strength: 1,
@@ -221,12 +278,12 @@ export function resolveZoomRenderState({
 
 	const exitStrength =
 		exitSeconds > 0
-			? easeInOutSine((resolvedDuration - localTime) / exitSeconds)
+			? motionProfile.exitStrength((resolvedDuration - localTime) / exitSeconds)
 			: 1;
 
 	if (!hasPrevious) {
 		const entryStrength =
-			entrySeconds > 0 ? easeInOutSine(localTime / entrySeconds) : 1;
+			entrySeconds > 0 ? motionProfile.entryStrength(localTime / entrySeconds) : 1;
 		return {
 			...targetState,
 			strength: Math.min(entryStrength, exitStrength),
@@ -276,6 +333,16 @@ export const zoomEffectDefinition: EffectDefinition = {
 			label: "Keep Frame Fixed",
 			type: "boolean",
 			default: true,
+		},
+		{
+			key: "motion",
+			label: "Motion",
+			type: "select",
+			default: "soft",
+			options: [
+				{ value: "soft", label: "Soft" },
+				{ value: "punchy", label: "Punchy" },
+			],
 		},
 		{
 			key: "ease",
