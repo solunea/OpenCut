@@ -30,6 +30,17 @@ export const DEFAULT_TEXT_BACKGROUND = {
 	offsetY: 0,
 };
 
+export const DEFAULT_TEXT_ANIMATION = {
+	preset: "none",
+	durationIn: 0.4,
+	durationOut: 0.4,
+	distance: 80,
+	intensity: 1,
+	blur: 12,
+	granularity: "whole",
+	stagger: 0.04,
+} as const;
+
 export const DEFAULT_TEXT_ELEMENT: Omit<TextElement, "id"> = {
 	type: "text",
 	name: "Text",
@@ -38,6 +49,7 @@ export const DEFAULT_TEXT_ELEMENT: Omit<TextElement, "id"> = {
 	fontFamily: "Arial",
 	color: "#ffffff",
 	background: DEFAULT_TEXT_BACKGROUND,
+	textAnimation: DEFAULT_TEXT_ANIMATION,
 	textAlign: "center",
 	fontWeight: "normal",
 	fontStyle: "normal",

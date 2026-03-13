@@ -23,6 +23,7 @@ import {
 	resolveOpacityAtTime,
 	resolveTransformAtTime,
 } from "@/lib/animation";
+import { resolveTextAnimationState } from "@/lib/text/animation";
 import { resolveEffectParamsAtTime } from "@/lib/animation/effect-param-channel";
 import { applyRendererEffect } from "../effect-applier";
 import { clamp } from "@/utils/math";
@@ -39,6 +40,37 @@ function scaleFontSize({
 
 function quoteFontFamily({ fontFamily }: { fontFamily: string }): string {
 	return `"${fontFamily.replace(/"/g, '\\"')}"`;
+}
+
+function splitLineIntoSegments({
+	line,
+	granularity,
+}: {
+	line: string;
+	granularity: "whole" | "word" | "character";
+}): string[] {
+	if (granularity === "whole") {
+		return [line];
+	}
+
+	if (granularity === "word") {
+		const segments = line.match(/\S+|\s+/g);
+		return segments && segments.length > 0 ? segments : [line];
+	}
+
+	return Array.from(line);
+}
+
+function getLineStartX({
+	textAlign,
+	lineWidth,
+}: {
+	textAlign: CanvasTextAlign;
+	lineWidth: number;
+}): number {
+	if (textAlign === "left") return 0;
+	if (textAlign === "right") return -lineWidth;
+	return -lineWidth / 2;
 }
 
 const TEXT_DECORATION_THICKNESS_RATIO = 0.07;
@@ -117,8 +149,17 @@ export class TextNode extends BaseNode<TextNodeParams> {
 			localTime,
 		});
 
-		const x = transform.position.x + this.params.canvasCenter.x;
-		const y = transform.position.y + this.params.canvasCenter.y;
+		const textAnimationState = resolveTextAnimationState({
+			textAnimation: this.params.textAnimation,
+			transform,
+			localTime,
+			duration: this.params.duration,
+		});
+		const animatedTransform = textAnimationState.transform;
+		const animatedOpacity = opacity * textAnimationState.opacityMultiplier;
+
+		const x = animatedTransform.position.x + this.params.canvasCenter.x;
+		const y = animatedTransform.position.y + this.params.canvasCenter.y;
 
 		const fontWeight = this.params.fontWeight === "bold" ? "bold" : "normal";
 		const fontStyle = this.params.fontStyle === "italic" ? "italic" : "normal";
@@ -140,7 +181,10 @@ export class TextNode extends BaseNode<TextNodeParams> {
 				: "source-over"
 		) as GlobalCompositeOperation;
 
-	renderer.context.save();
+		const granularity = this.params.textAnimation?.granularity ?? "whole";
+		const stagger = this.params.textAnimation?.stagger ?? 0;
+
+		renderer.context.save();
 		renderer.context.font = fontString;
 		renderer.context.textBaseline = baseline;
 		if ("letterSpacing" in renderer.context) {
@@ -152,7 +196,7 @@ export class TextNode extends BaseNode<TextNodeParams> {
 		const lineCount = lines.length;
 		const block = measureTextBlock({ lineMetrics, lineHeightPx, fallbackFontSize: scaledFontSize });
 
-	const textColor = resolveColorAtTime({
+		const textColor = resolveColorAtTime({
 			baseColor: this.params.color,
 			animations: this.params.animations,
 			propertyPath: "color",
@@ -199,7 +243,7 @@ export class TextNode extends BaseNode<TextNodeParams> {
 			}),
 		};
 
-	const drawContent = (ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) => {
+		const drawContent = (ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) => {
 			ctx.font = fontString;
 			ctx.textAlign = this.params.textAlign;
 			ctx.textBaseline = baseline;
@@ -223,17 +267,60 @@ export class TextNode extends BaseNode<TextNodeParams> {
 				if (backgroundRect) {
 					const p = clamp({ value: resolvedBackground.cornerRadius, min: CORNER_RADIUS_MIN, max: CORNER_RADIUS_MAX }) / 100;
 					const radius = Math.min(backgroundRect.width, backgroundRect.height) / 2 * p;
-				ctx.fillStyle = resolvedBackground.color;
-				ctx.beginPath();
-				ctx.roundRect(backgroundRect.left, backgroundRect.top, backgroundRect.width, backgroundRect.height, radius);
-				ctx.fill();
-				ctx.fillStyle = textColor;
+					ctx.fillStyle = resolvedBackground.color;
+					ctx.beginPath();
+					ctx.roundRect(backgroundRect.left, backgroundRect.top, backgroundRect.width, backgroundRect.height, radius);
+					ctx.fill();
+					ctx.fillStyle = textColor;
 				}
 			}
 
+			let animatedSegmentIndex = 0;
+
 			for (let i = 0; i < lineCount; i++) {
 				const lineY = i * lineHeightPx - block.visualCenterOffset;
-				ctx.fillText(lines[i], 0, lineY);
+				const segments = splitLineIntoSegments({
+					line: lines[i],
+					granularity,
+				});
+				let cursorX = getLineStartX({
+					textAlign: this.params.textAlign,
+					lineWidth: lineMetrics[i].width,
+				});
+
+				for (const segment of segments) {
+					const segmentWidth = ctx.measureText(segment).width;
+					const shouldAnimateSegment =
+						granularity === "whole" || /\S/.test(segment);
+					const segmentDelay = shouldAnimateSegment
+						? animatedSegmentIndex * stagger
+						: Math.max(0, animatedSegmentIndex - 1) * stagger;
+					const segmentState = resolveTextAnimationState({
+						textAnimation: this.params.textAnimation,
+						transform: this.params.transform,
+						localTime,
+						duration: this.params.duration,
+						segmentDelay,
+					});
+
+					ctx.save();
+					ctx.translate(cursorX, lineY);
+					ctx.scale(segmentState.transform.scale, segmentState.transform.scale);
+					if (segmentState.transform.rotate) {
+						ctx.rotate((segmentState.transform.rotate * Math.PI) / 180);
+					}
+					ctx.filter =
+						segmentState.blurPx > 0 ? `blur(${segmentState.blurPx}px)` : "none";
+					ctx.globalAlpha = segmentState.opacityMultiplier;
+					ctx.fillText(segment, 0, 0);
+					ctx.restore();
+
+					cursorX += segmentWidth;
+					if (shouldAnimateSegment) {
+						animatedSegmentIndex += 1;
+					}
+				}
+
 				drawTextDecoration({
 					ctx,
 					textDecoration: this.params.textDecoration ?? "none",
@@ -248,9 +335,9 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 		const applyTransform = (ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) => {
 			ctx.translate(x, y);
-			ctx.scale(transform.scale, transform.scale);
-			if (transform.rotate) {
-				ctx.rotate((transform.rotate * Math.PI) / 180);
+			ctx.scale(animatedTransform.scale, animatedTransform.scale);
+			if (animatedTransform.rotate) {
+				ctx.rotate((animatedTransform.rotate * Math.PI) / 180);
 			}
 		};
 
@@ -260,7 +347,7 @@ export class TextNode extends BaseNode<TextNodeParams> {
 			renderer.context.save();
 			applyTransform(renderer.context);
 			renderer.context.globalCompositeOperation = blendMode;
-			renderer.context.globalAlpha = opacity;
+			renderer.context.globalAlpha = animatedOpacity;
 			drawContent(renderer.context);
 			renderer.context.restore();
 			return;
@@ -272,10 +359,10 @@ export class TextNode extends BaseNode<TextNodeParams> {
 		const offscreenCtx = offscreen.getContext("2d") as OffscreenCanvasRenderingContext2D | null;
 
 		if (!offscreenCtx) {
-		renderer.context.save();
+			renderer.context.save();
 			applyTransform(renderer.context);
 			renderer.context.globalCompositeOperation = blendMode;
-			renderer.context.globalAlpha = opacity;
+			renderer.context.globalAlpha = animatedOpacity;
 			drawContent(renderer.context);
 			renderer.context.restore();
 			return;
@@ -309,7 +396,7 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 		renderer.context.save();
 		renderer.context.globalCompositeOperation = blendMode;
-		renderer.context.globalAlpha = opacity;
+		renderer.context.globalAlpha = animatedOpacity;
 		renderer.context.drawImage(currentSource, 0, 0);
 		renderer.context.restore();
 	}

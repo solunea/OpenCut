@@ -1,15 +1,19 @@
 import { Textarea } from "@/components/ui/textarea";
 import { FontPicker } from "@/components/ui/font-picker";
-import type { TextElement } from "@/types/timeline";
+import type {
+  TextAnimationGranularity,
+  TextAnimationPreset,
+  TextElement,
+} from "@/types/timeline";
 import { NumberField } from "@/components/ui/number-field";
 import { useRef } from "react";
 import {
-	Section,
-	SectionContent,
-	SectionField,
-	SectionFields,
-	SectionHeader,
-	SectionTitle,
+  Section,
+  SectionContent,
+  SectionField,
+  SectionFields,
+  SectionHeader,
+  SectionTitle,
 } from "./section";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Button } from "@/components/ui/button";
@@ -18,14 +22,15 @@ import { clamp } from "@/utils/math";
 import { useEditor } from "@/hooks/use-editor";
 import { DEFAULT_COLOR } from "@/constants/project-constants";
 import {
-	CORNER_RADIUS_MAX,
-	CORNER_RADIUS_MIN,
-	DEFAULT_LETTER_SPACING,
-	DEFAULT_LINE_HEIGHT,
-	DEFAULT_TEXT_BACKGROUND,
-	DEFAULT_TEXT_ELEMENT,
-	MAX_FONT_SIZE,
-	MIN_FONT_SIZE,
+  CORNER_RADIUS_MAX,
+  CORNER_RADIUS_MIN,
+  DEFAULT_LETTER_SPACING,
+  DEFAULT_LINE_HEIGHT,
+  DEFAULT_TEXT_ANIMATION,
+  DEFAULT_TEXT_BACKGROUND,
+  DEFAULT_TEXT_ELEMENT,
+  MAX_FONT_SIZE,
+  MIN_FONT_SIZE,
 } from "@/constants/text-constants";
 import { usePropertyDraft } from "./hooks/use-property-draft";
 import { useKeyframedColorProperty } from "./hooks/use-keyframed-color-property";
@@ -37,197 +42,560 @@ import { isPropertyAtDefault } from "./sections/transform";
 import { resolveColorAtTime, resolveNumberAtTime } from "@/lib/animation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-	TextFontIcon,
-	ViewIcon,
-	ViewOffSlashIcon,
+  TextFontIcon,
+  ViewIcon,
+  ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons";
 import { OcTextHeightIcon, OcTextWidthIcon } from "@opencut/ui/icons";
 import { cn } from "@/utils/ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const TEXT_ANIMATION_OPTIONS: Array<{
+  value: TextAnimationPreset;
+  label: string;
+}> = [
+  { value: "none", label: "None" },
+  { value: "fade", label: "Fade" },
+  { value: "slide-up", label: "Slide Up" },
+  { value: "slide-down", label: "Slide Down" },
+  { value: "pop", label: "Pop" },
+  { value: "blur", label: "Blur" },
+];
+
+const TEXT_ANIMATION_GRANULARITY_OPTIONS: Array<{
+  value: TextAnimationGranularity;
+  label: string;
+}> = [
+  { value: "whole", label: "Entier" },
+  { value: "word", label: "Mot" },
+  { value: "character", label: "Caractère" },
+];
 
 export function TextProperties({
-	element,
-	trackId,
+  element,
+  trackId,
 }: {
-	element: TextElement;
-	trackId: string;
+  element: TextElement;
+  trackId: string;
 }) {
-	return (
-		<div className="flex h-full flex-col">
-			<ContentSection element={element} trackId={trackId} />
-			<TransformSection element={element} trackId={trackId} />
-			<BlendingSection element={element} trackId={trackId} />
-			<TypographySection element={element} trackId={trackId} />
-			<SpacingSection element={element} trackId={trackId} />
-			<BackgroundSection element={element} trackId={trackId} />
-		</div>
-	);
+  return (
+    <div className="flex h-full flex-col">
+      <ContentSection element={element} trackId={trackId} />
+      <TransformSection element={element} trackId={trackId} />
+      <BlendingSection element={element} trackId={trackId} />
+      <TypographySection element={element} trackId={trackId} />
+      <SpacingSection element={element} trackId={trackId} />
+      <BackgroundSection element={element} trackId={trackId} />
+      <AnimationSection element={element} trackId={trackId} />
+    </div>
+  );
 }
 
 function ContentSection({
-	element,
-	trackId,
+  element,
+  trackId,
 }: {
-	element: TextElement;
-	trackId: string;
+  element: TextElement;
+  trackId: string;
 }) {
-	const editor = useEditor();
+  const editor = useEditor();
 
-	const content = usePropertyDraft({
-		displayValue: element.content,
-		parse: (input) => input,
-		onPreview: (value) =>
-			editor.timeline.previewElements({
-				updates: [
-					{ trackId, elementId: element.id, updates: { content: value } },
-				],
-			}),
-		onCommit: () => editor.timeline.commitPreview(),
-	});
+  const content = usePropertyDraft({
+    displayValue: element.content,
+    parse: (input) => input,
+    onPreview: (value) =>
+      editor.timeline.previewElements({
+        updates: [
+          { trackId, elementId: element.id, updates: { content: value } },
+        ],
+      }),
+    onCommit: () => editor.timeline.commitPreview(),
+  });
 
-	return (
-		<Section collapsible sectionKey="text:content" showTopBorder={false}>
-			<SectionHeader>
-				<SectionTitle>Content</SectionTitle>
-			</SectionHeader>
-			<SectionContent>
-				<Textarea
-					placeholder="Name"
-					value={content.displayValue}
-					className="min-h-20"
-					onFocus={content.onFocus}
-					onChange={content.onChange}
-					onBlur={content.onBlur}
-				/>
-			</SectionContent>
-		</Section>
-	);
+  return (
+    <Section collapsible sectionKey="text:content" showTopBorder={false}>
+      <SectionHeader>
+        <SectionTitle>Content</SectionTitle>
+      </SectionHeader>
+      <SectionContent>
+        <Textarea
+          placeholder="Name"
+          value={content.displayValue}
+          className="min-h-20"
+          onFocus={content.onFocus}
+          onChange={content.onChange}
+          onBlur={content.onBlur}
+        />
+      </SectionContent>
+    </Section>
+  );
 }
 
 function TypographySection({
-	element,
-	trackId,
+  element,
+  trackId,
 }: {
-	element: TextElement;
-	trackId: string;
+  element: TextElement;
+  trackId: string;
 }) {
-	const editor = useEditor();
-	const { localTime, isPlayheadWithinElementRange } = useElementPlayhead({
-		startTime: element.startTime,
-		duration: element.duration,
-	});
-	const resolvedTextColor = resolveColorAtTime({
-		baseColor: element.color,
-		animations: element.animations,
-		propertyPath: "color",
-		localTime,
-	});
+  const editor = useEditor();
+  const { localTime, isPlayheadWithinElementRange } = useElementPlayhead({
+    startTime: element.startTime,
+    duration: element.duration,
+  });
+  const resolvedTextColor = resolveColorAtTime({
+    baseColor: element.color,
+    animations: element.animations,
+    propertyPath: "color",
+    localTime,
+  });
 
-	const textColor = useKeyframedColorProperty({
-		trackId,
-		elementId: element.id,
-		animations: element.animations,
-		propertyPath: "color",
-		localTime,
-		isPlayheadWithinElementRange,
-		resolvedColor: resolvedTextColor,
-		buildBaseUpdates: ({ value }) => ({ color: value }),
-	});
+  const textColor = useKeyframedColorProperty({
+    trackId,
+    elementId: element.id,
+    animations: element.animations,
+    propertyPath: "color",
+    localTime,
+    isPlayheadWithinElementRange,
+    resolvedColor: resolvedTextColor,
+    buildBaseUpdates: ({ value }) => ({ color: value }),
+  });
 
-	const fontSize = usePropertyDraft({
-		displayValue: element.fontSize.toString(),
-		parse: (input) => {
-			const parsed = parseFloat(input);
-			if (Number.isNaN(parsed)) return null;
-			return clamp({ value: parsed, min: MIN_FONT_SIZE, max: MAX_FONT_SIZE });
-		},
-		onPreview: (value) =>
-			editor.timeline.previewElements({
-				updates: [
-					{ trackId, elementId: element.id, updates: { fontSize: value } },
-				],
-			}),
-		onCommit: () => editor.timeline.commitPreview(),
-	});
+  const fontSize = usePropertyDraft({
+    displayValue: element.fontSize.toString(),
+    parse: (input) => {
+      const parsed = parseFloat(input);
+      if (Number.isNaN(parsed)) return null;
+      return clamp({ value: parsed, min: MIN_FONT_SIZE, max: MAX_FONT_SIZE });
+    },
+    onPreview: (value) =>
+      editor.timeline.previewElements({
+        updates: [
+          { trackId, elementId: element.id, updates: { fontSize: value } },
+        ],
+      }),
+    onCommit: () => editor.timeline.commitPreview(),
+  });
 
-	return (
-		<Section collapsible sectionKey="text:typography">
-			<SectionHeader>
-				<SectionTitle>Typography</SectionTitle>
-			</SectionHeader>
-			<SectionContent>
-				<SectionFields>
-					<SectionField label="Font">
-						<FontPicker
-							defaultValue={element.fontFamily}
-							onValueChange={(value) =>
-								editor.timeline.updateElements({
-									updates: [
-										{
-											trackId,
-											elementId: element.id,
-											updates: { fontFamily: value },
-										},
-									],
-								})
-							}
-						/>
-					</SectionField>
-					<SectionField label="Size">
-						<NumberField
-							value={fontSize.displayValue}
-							min={MIN_FONT_SIZE}
-							max={MAX_FONT_SIZE}
-							onFocus={fontSize.onFocus}
-							onChange={fontSize.onChange}
-							onBlur={fontSize.onBlur}
-							onScrub={fontSize.scrubTo}
-							onScrubEnd={fontSize.commitScrub}
-							onReset={() =>
-								editor.timeline.updateElements({
-									updates: [
-										{
-											trackId,
-											elementId: element.id,
-											updates: { fontSize: DEFAULT_TEXT_ELEMENT.fontSize },
-										},
-									],
-								})
-							}
-							isDefault={element.fontSize === DEFAULT_TEXT_ELEMENT.fontSize}
-							icon={<HugeiconsIcon icon={TextFontIcon} />}
-						/>
-					</SectionField>
-					<SectionField
-						label="Color"
-						beforeLabel={
-							<KeyframeToggle
-								isActive={textColor.isKeyframedAtTime}
-								isDisabled={!isPlayheadWithinElementRange}
-								title="Toggle text color keyframe"
-								onToggle={textColor.toggleKeyframe}
-							/>
-						}
-					>
-						<ColorPicker
-							value={uppercase({
-								string: resolvedTextColor.replace("#", ""),
-							})}
-							onChange={(color) => textColor.onChange({ color: `#${color}` })}
-							onChangeEnd={textColor.onChangeEnd}
-						/>
-					</SectionField>
-				</SectionFields>
-			</SectionContent>
-		</Section>
-	);
+  return (
+    <Section collapsible sectionKey="text:typography">
+      <SectionHeader>
+        <SectionTitle>Typography</SectionTitle>
+      </SectionHeader>
+      <SectionContent>
+        <SectionFields>
+          <SectionField label="Font">
+            <FontPicker
+              defaultValue={element.fontFamily}
+              onValueChange={(value) =>
+                editor.timeline.updateElements({
+                  updates: [
+                    {
+                      trackId,
+                      elementId: element.id,
+                      updates: { fontFamily: value },
+                    },
+                  ],
+                })
+              }
+            />
+          </SectionField>
+          <SectionField label="Size">
+            <NumberField
+              value={fontSize.displayValue}
+              min={MIN_FONT_SIZE}
+              max={MAX_FONT_SIZE}
+              onFocus={fontSize.onFocus}
+              onChange={fontSize.onChange}
+              onBlur={fontSize.onBlur}
+              onScrub={fontSize.scrubTo}
+              onScrubEnd={fontSize.commitScrub}
+              onReset={() =>
+                editor.timeline.updateElements({
+                  updates: [
+                    {
+                      trackId,
+                      elementId: element.id,
+                      updates: { fontSize: DEFAULT_TEXT_ELEMENT.fontSize },
+                    },
+                  ],
+                })
+              }
+              isDefault={element.fontSize === DEFAULT_TEXT_ELEMENT.fontSize}
+              icon={<HugeiconsIcon icon={TextFontIcon} />}
+            />
+          </SectionField>
+          <SectionField
+            label="Color"
+            beforeLabel={
+              <KeyframeToggle
+                isActive={textColor.isKeyframedAtTime}
+                isDisabled={!isPlayheadWithinElementRange}
+                title="Toggle text color keyframe"
+                onToggle={textColor.toggleKeyframe}
+              />
+            }
+          >
+            <ColorPicker
+              value={uppercase({
+                string: resolvedTextColor.replace("#", ""),
+              })}
+              onChange={(color) => textColor.onChange({ color: `#${color}` })}
+              onChangeEnd={textColor.onChangeEnd}
+            />
+          </SectionField>
+        </SectionFields>
+      </SectionContent>
+    </Section>
+  );
+}
+
+function AnimationSection({
+  element,
+  trackId,
+}: {
+  element: TextElement;
+  trackId: string;
+}) {
+  const editor = useEditor();
+  const textAnimation = element.textAnimation ?? DEFAULT_TEXT_ANIMATION;
+  const isDisabled = textAnimation.preset === "none";
+
+  const buildAnimationUpdates = ({
+    updates,
+  }: {
+    updates: Partial<NonNullable<TextElement["textAnimation"]>>;
+  }) => ({
+    textAnimation: {
+      ...textAnimation,
+      ...updates,
+    },
+  });
+
+  const durationIn = usePropertyDraft({
+    displayValue: textAnimation.durationIn.toFixed(1),
+    parse: (input) => {
+      const parsed = parseFloat(input);
+      if (Number.isNaN(parsed)) return null;
+      return clamp({ value: parsed, min: 0, max: 10 });
+    },
+    onPreview: (value) =>
+      editor.timeline.previewElements({
+        updates: [
+          {
+            trackId,
+            elementId: element.id,
+            updates: buildAnimationUpdates({ updates: { durationIn: value } }),
+          },
+        ],
+      }),
+    onCommit: () => editor.timeline.commitPreview(),
+  });
+
+  const durationOut = usePropertyDraft({
+    displayValue: textAnimation.durationOut.toFixed(1),
+    parse: (input) => {
+      const parsed = parseFloat(input);
+      if (Number.isNaN(parsed)) return null;
+      return clamp({ value: parsed, min: 0, max: 10 });
+    },
+    onPreview: (value) =>
+      editor.timeline.previewElements({
+        updates: [
+          {
+            trackId,
+            elementId: element.id,
+            updates: buildAnimationUpdates({ updates: { durationOut: value } }),
+          },
+        ],
+      }),
+    onCommit: () => editor.timeline.commitPreview(),
+  });
+
+  const distance = usePropertyDraft({
+    displayValue: Math.round(textAnimation.distance).toString(),
+    parse: (input) => {
+      const parsed = parseFloat(input);
+      if (Number.isNaN(parsed)) return null;
+      return clamp({ value: parsed, min: 0, max: 1000 });
+    },
+    onPreview: (value) =>
+      editor.timeline.previewElements({
+        updates: [
+          {
+            trackId,
+            elementId: element.id,
+            updates: buildAnimationUpdates({ updates: { distance: value } }),
+          },
+        ],
+      }),
+    onCommit: () => editor.timeline.commitPreview(),
+  });
+
+  const intensity = usePropertyDraft({
+    displayValue: textAnimation.intensity.toFixed(1),
+    parse: (input) => {
+      const parsed = parseFloat(input);
+      if (Number.isNaN(parsed)) return null;
+      return clamp({ value: parsed, min: 0, max: 5 });
+    },
+    onPreview: (value) =>
+      editor.timeline.previewElements({
+        updates: [
+          {
+            trackId,
+            elementId: element.id,
+            updates: buildAnimationUpdates({ updates: { intensity: value } }),
+          },
+        ],
+      }),
+    onCommit: () => editor.timeline.commitPreview(),
+  });
+
+  const blur = usePropertyDraft({
+    displayValue: Math.round(textAnimation.blur).toString(),
+    parse: (input) => {
+      const parsed = parseFloat(input);
+      if (Number.isNaN(parsed)) return null;
+      return clamp({ value: parsed, min: 0, max: 100 });
+    },
+    onPreview: (value) =>
+      editor.timeline.previewElements({
+        updates: [
+          {
+            trackId,
+            elementId: element.id,
+            updates: buildAnimationUpdates({ updates: { blur: value } }),
+          },
+        ],
+      }),
+    onCommit: () => editor.timeline.commitPreview(),
+  });
+
+  return (
+    <Section collapsible sectionKey="text:animation">
+      <SectionHeader>
+        <SectionTitle>Animation</SectionTitle>
+      </SectionHeader>
+      <SectionContent>
+        <SectionFields>
+          <SectionField label="Preset">
+            <Select
+              value={textAnimation.preset}
+              onValueChange={(value) =>
+                editor.timeline.updateElements({
+                  updates: [
+                    {
+                      trackId,
+                      elementId: element.id,
+                      updates: buildAnimationUpdates({
+                        updates: { preset: value as TextAnimationPreset },
+                      }),
+                    },
+                  ],
+                })
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select animation" />
+              </SelectTrigger>
+              <SelectContent>
+                {TEXT_ANIMATION_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SectionField>
+          <SectionField label="Mode">
+            <Select
+              value={textAnimation.granularity}
+              onValueChange={(value) =>
+                editor.timeline.updateElements({
+                  updates: [
+                    {
+                      trackId,
+                      elementId: element.id,
+                      updates: buildAnimationUpdates({
+                        updates: {
+                          granularity: value as TextAnimationGranularity,
+                        },
+                      }),
+                    },
+                  ],
+                })
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select mode" />
+              </SelectTrigger>
+              <SelectContent>
+                {TEXT_ANIMATION_GRANULARITY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SectionField>
+          <div
+            className={cn(
+              "space-y-2",
+              isDisabled && "pointer-events-none opacity-50",
+            )}
+          >
+            <div className="flex items-start gap-2">
+              <SectionField label="In" className="w-1/2">
+                <NumberField
+                  value={durationIn.displayValue}
+                  min={0}
+                  onFocus={durationIn.onFocus}
+                  onChange={durationIn.onChange}
+                  onBlur={durationIn.onBlur}
+                  onScrub={durationIn.scrubTo}
+                  onScrubEnd={durationIn.commitScrub}
+                  onReset={() =>
+                    editor.timeline.updateElements({
+                      updates: [
+                        {
+                          trackId,
+                          elementId: element.id,
+                          updates: buildAnimationUpdates({
+                            updates: { durationIn: DEFAULT_TEXT_ANIMATION.durationIn },
+                          }),
+                        },
+                      ],
+                    })
+                  }
+                  isDefault={textAnimation.durationIn === DEFAULT_TEXT_ANIMATION.durationIn}
+                  dragSensitivity="slow"
+                />
+              </SectionField>
+              <SectionField label="Out" className="w-1/2">
+                <NumberField
+                  value={durationOut.displayValue}
+                  min={0}
+                  onFocus={durationOut.onFocus}
+                  onChange={durationOut.onChange}
+                  onBlur={durationOut.onBlur}
+                  onScrub={durationOut.scrubTo}
+                  onScrubEnd={durationOut.commitScrub}
+                  onReset={() =>
+                    editor.timeline.updateElements({
+                      updates: [
+                        {
+                          trackId,
+                          elementId: element.id,
+                          updates: buildAnimationUpdates({
+                            updates: { durationOut: DEFAULT_TEXT_ANIMATION.durationOut },
+                          }),
+                        },
+                      ],
+                    })
+                  }
+                  isDefault={textAnimation.durationOut === DEFAULT_TEXT_ANIMATION.durationOut}
+                  dragSensitivity="slow"
+                />
+              </SectionField>
+            </div>
+            <div className="flex items-start gap-2">
+              <SectionField label="Distance" className="w-1/2">
+                <NumberField
+                  value={distance.displayValue}
+                  min={0}
+                  onFocus={distance.onFocus}
+                  onChange={distance.onChange}
+                  onBlur={distance.onBlur}
+                  onScrub={distance.scrubTo}
+                  onScrubEnd={distance.commitScrub}
+                  onReset={() =>
+                    editor.timeline.updateElements({
+                      updates: [
+                        {
+                          trackId,
+                          elementId: element.id,
+                          updates: buildAnimationUpdates({
+                            updates: { distance: DEFAULT_TEXT_ANIMATION.distance },
+                          }),
+                        },
+                      ],
+                    })
+                  }
+                  isDefault={textAnimation.distance === DEFAULT_TEXT_ANIMATION.distance}
+                />
+              </SectionField>
+              <SectionField label="Intensity" className="w-1/2">
+                <NumberField
+                  value={intensity.displayValue}
+                  min={0}
+                  onFocus={intensity.onFocus}
+                  onChange={intensity.onChange}
+                  onBlur={intensity.onBlur}
+                  onScrub={intensity.scrubTo}
+                  onScrubEnd={intensity.commitScrub}
+                  onReset={() =>
+                    editor.timeline.updateElements({
+                      updates: [
+                        {
+                          trackId,
+                          elementId: element.id,
+                          updates: buildAnimationUpdates({
+                            updates: { intensity: DEFAULT_TEXT_ANIMATION.intensity },
+                          }),
+                        },
+                      ],
+                    })
+                  }
+                  isDefault={textAnimation.intensity === DEFAULT_TEXT_ANIMATION.intensity}
+                  dragSensitivity="slow"
+                />
+              </SectionField>
+            </div>
+            <SectionField label="Blur">
+              <NumberField
+                value={blur.displayValue}
+                min={0}
+                onFocus={blur.onFocus}
+                onChange={blur.onChange}
+                onBlur={blur.onBlur}
+                onScrub={blur.scrubTo}
+                onScrubEnd={blur.commitScrub}
+                onReset={() =>
+                  editor.timeline.updateElements({
+                    updates: [
+                      {
+                        trackId,
+                        elementId: element.id,
+                        updates: buildAnimationUpdates({
+                          updates: { blur: DEFAULT_TEXT_ANIMATION.blur },
+                        }),
+                      },
+                    ],
+                  })
+                }
+                isDefault={textAnimation.blur === DEFAULT_TEXT_ANIMATION.blur}
+              />
+            </SectionField>
+          </div>
+        </SectionFields>
+      </SectionContent>
+    </Section>
+  );
 }
 
 function SpacingSection({
-	element,
-	trackId,
+  element,
+  trackId,
 }: {
-	element: TextElement;
-	trackId: string;
+  element: TextElement;
+  trackId: string;
 }) {
 	const editor = useEditor();
 

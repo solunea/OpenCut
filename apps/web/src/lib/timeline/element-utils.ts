@@ -1,4 +1,4 @@
-import { DEFAULT_TEXT_ELEMENT } from "@/constants/text-constants";
+import { DEFAULT_TEXT_ELEMENT, DEFAULT_TEXT_ANIMATION } from "@/constants/text-constants";
 import {
 	DEFAULT_BLEND_MODE,
 	DEFAULT_OPACITY,
@@ -152,6 +152,21 @@ function buildTextBackground(
 	};
 }
 
+function buildTextAnimation(
+	raw: Partial<TextElement["textAnimation"]> | undefined,
+): TextElement["textAnimation"] {
+	return {
+		preset: raw?.preset ?? DEFAULT_TEXT_ANIMATION.preset,
+		durationIn: raw?.durationIn ?? DEFAULT_TEXT_ANIMATION.durationIn,
+		durationOut: raw?.durationOut ?? DEFAULT_TEXT_ANIMATION.durationOut,
+		distance: raw?.distance ?? DEFAULT_TEXT_ANIMATION.distance,
+		intensity: raw?.intensity ?? DEFAULT_TEXT_ANIMATION.intensity,
+		blur: raw?.blur ?? DEFAULT_TEXT_ANIMATION.blur,
+		granularity: raw?.granularity ?? DEFAULT_TEXT_ANIMATION.granularity,
+		stagger: raw?.stagger ?? DEFAULT_TEXT_ANIMATION.stagger,
+	};
+}
+
 export function buildTextElement({
 	raw,
 	startTime,
@@ -176,6 +191,7 @@ export function buildTextElement({
 		fontFamily: t.fontFamily ?? DEFAULT_TEXT_ELEMENT.fontFamily,
 		color: t.color ?? DEFAULT_TEXT_ELEMENT.color,
 		background: buildTextBackground(t.background),
+		textAnimation: buildTextAnimation(t.textAnimation),
 		textAlign: t.textAlign ?? DEFAULT_TEXT_ELEMENT.textAlign,
 		fontWeight: t.fontWeight ?? DEFAULT_TEXT_ELEMENT.fontWeight,
 		fontStyle: t.fontStyle ?? DEFAULT_TEXT_ELEMENT.fontStyle,

@@ -13,6 +13,7 @@ import {
 	resolveTransformAtTime,
 	resolveNumberAtTime,
 } from "@/lib/animation";
+import { resolveTextAnimationState } from "@/lib/text/animation";
 
 export interface ElementBounds {
 	cx: number;
@@ -118,6 +119,13 @@ export function getElementBounds({
 			animations: element.animations,
 			localTime,
 		});
+		const textAnimationState = resolveTextAnimationState({
+			textAnimation: element.textAnimation,
+			transform,
+			localTime,
+			duration: element.duration,
+		});
+		const animatedTransform = textAnimationState.transform;
 		const scaledFontSize =
 			element.fontSize * (canvasHeight / FONT_SIZE_SCALE_REFERENCE);
 		const letterSpacing = element.letterSpacing ?? 0;
@@ -193,30 +201,33 @@ export function getElementBounds({
 			measuredHeight = visualRect.height;
 			const localCenterX = visualRect.left + visualRect.width / 2;
 			const localCenterY = visualRect.top + visualRect.height / 2;
-			const scaledCenterX = localCenterX * transform.scale;
-			const scaledCenterY = localCenterY * transform.scale;
-			const rotationRad = (transform.rotate * Math.PI) / 180;
+			const scaledCenterX = localCenterX * animatedTransform.scale;
+			const scaledCenterY = localCenterY * animatedTransform.scale;
+			const rotationRad = (animatedTransform.rotate * Math.PI) / 180;
 			const cos = Math.cos(rotationRad);
 			const sin = Math.sin(rotationRad);
 			const rotatedCenterX = scaledCenterX * cos - scaledCenterY * sin;
 			const rotatedCenterY = scaledCenterX * sin + scaledCenterY * cos;
+			const blurSpread = textAnimationState.blurPx * 2;
 			return {
-				cx: canvasWidth / 2 + transform.position.x + rotatedCenterX,
-				cy: canvasHeight / 2 + transform.position.y + rotatedCenterY,
-				width: measuredWidth * transform.scale,
-				height: measuredHeight * transform.scale,
-				rotation: transform.rotate,
+				cx:
+					canvasWidth / 2 + animatedTransform.position.x + rotatedCenterX,
+				cy:
+					canvasHeight / 2 + animatedTransform.position.y + rotatedCenterY,
+				width: measuredWidth * animatedTransform.scale + blurSpread,
+				height: measuredHeight * animatedTransform.scale + blurSpread,
+				rotation: animatedTransform.rotate,
 			};
 		}
 
-		const width = measuredWidth * transform.scale;
-		const height = measuredHeight * transform.scale;
+		const width = measuredWidth * animatedTransform.scale;
+		const height = measuredHeight * animatedTransform.scale;
 		return {
-			cx: canvasWidth / 2 + transform.position.x,
-			cy: canvasHeight / 2 + transform.position.y,
+			cx: canvasWidth / 2 + animatedTransform.position.x,
+			cy: canvasHeight / 2 + animatedTransform.position.y,
 			width,
 			height,
-			rotation: transform.rotate,
+			rotation: animatedTransform.rotate,
 		};
 	}
 

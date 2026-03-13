@@ -142,6 +142,27 @@ export interface TextBackground {
 	offsetY?: number;
 }
 
+export type TextAnimationPreset =
+	| "none"
+	| "fade"
+	| "slide-up"
+	| "slide-down"
+	| "pop"
+	| "blur";
+
+export type TextAnimationGranularity = "whole" | "word" | "character";
+
+export interface TextAnimation {
+	preset: TextAnimationPreset;
+	durationIn: number;
+	durationOut: number;
+	distance: number;
+	intensity: number;
+	blur: number;
+	granularity: TextAnimationGranularity;
+	stagger: number;
+}
+
 export interface TextElement extends BaseTimelineElement {
 	type: "text";
 	content: string;
@@ -149,6 +170,7 @@ export interface TextElement extends BaseTimelineElement {
 	fontFamily: string;
 	color: string;
 	background: TextBackground;
+	textAnimation?: TextAnimation;
 	textAlign: "left" | "center" | "right";
 	fontWeight: "normal" | "bold";
 	fontStyle: "normal" | "italic";
