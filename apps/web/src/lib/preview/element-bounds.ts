@@ -52,6 +52,29 @@ function getLineStartX({
 	return -lineWidth / 2;
 }
 
+function getAnimatedSegmentCount({
+	lines,
+	granularity,
+}: {
+	lines: string[];
+	granularity: "whole" | "word" | "character";
+}): number {
+	if (granularity === "whole") {
+		return lines.length > 0 ? 1 : 0;
+	}
+
+	let count = 0;
+	for (const line of lines) {
+		for (const segment of splitLineIntoSegments({ line, granularity })) {
+			if (/\S/.test(segment)) {
+				count += 1;
+			}
+		}
+	}
+
+	return count;
+}
+
 function getTransformedRectBounds({
 	left,
 	top,
@@ -289,6 +312,11 @@ export function getElementBounds({
 			});
 			measuredWidth = visualRect.width;
 			measuredHeight = visualRect.height;
+			const animatedSegmentCount = getAnimatedSegmentCount({
+				lines,
+				granularity,
+			});
+			const maxSegmentDelay = Math.max(0, animatedSegmentCount - 1) * stagger;
 
 			let localBounds = {
 				left: visualRect.left,
@@ -340,6 +368,7 @@ export function getElementBounds({
 							localTime,
 							duration: element.duration,
 							segmentDelay,
+							maxSegmentDelay,
 						});
 						const ascent = getMetricAscent({
 							metrics,

@@ -48,12 +48,14 @@ export function resolveTextAnimationState({
 	localTime,
 	duration,
 	segmentDelay = 0,
+	maxSegmentDelay = 0,
 }: {
 	textAnimation?: TextAnimation;
 	transform: Transform;
 	localTime: number;
 	duration: number;
 	segmentDelay?: number;
+	maxSegmentDelay?: number;
 }): ResolvedTextAnimationState {
 	const normalized = normalizeTextAnimation({ textAnimation });
 	const delayedLocalTime = localTime - segmentDelay;
@@ -132,7 +134,7 @@ export function resolveTextAnimationState({
 	}
 
 	if (durationOut > 0) {
-		const exitStart = Math.max(0, duration - durationOut);
+		const exitStart = Math.max(0, duration - durationOut - maxSegmentDelay);
 		const exitProgress = clamp({
 			value: (delayedLocalTime - exitStart) / durationOut,
 			min: 0,

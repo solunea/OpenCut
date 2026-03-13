@@ -73,6 +73,29 @@ function getLineStartX({
 	return -lineWidth / 2;
 }
 
+function getAnimatedSegmentCount({
+	lines,
+	granularity,
+}: {
+	lines: string[];
+	granularity: "whole" | "word" | "character";
+}): number {
+	if (granularity === "whole") {
+		return lines.length > 0 ? 1 : 0;
+	}
+
+	let count = 0;
+	for (const line of lines) {
+		for (const segment of splitLineIntoSegments({ line, granularity })) {
+			if (/\S/.test(segment)) {
+				count += 1;
+			}
+		}
+	}
+
+	return count;
+}
+
 const IDENTITY_TRANSFORM: Transform = {
 	scale: 1,
 	position: { x: 0, y: 0 },
@@ -185,6 +208,11 @@ export class TextNode extends BaseNode<TextNodeParams> {
 		const granularity = this.params.textAnimation?.granularity ?? "whole";
 		const isSegmentedAnimation = granularity !== "whole";
 		const stagger = this.params.textAnimation?.stagger ?? 0;
+		const animatedSegmentCount = getAnimatedSegmentCount({
+			lines,
+			granularity,
+		});
+		const maxSegmentDelay = Math.max(0, animatedSegmentCount - 1) * stagger;
 		const renderedTransform = isSegmentedAnimation
 			? transform
 			: textAnimationState.transform;
@@ -331,6 +359,7 @@ export class TextNode extends BaseNode<TextNodeParams> {
 						localTime,
 						duration: this.params.duration,
 						segmentDelay,
+						maxSegmentDelay,
 					});
 
 					ctx.save();
