@@ -1,7 +1,7 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { createOffscreenCanvas } from "../canvas-utils";
 import { BaseNode } from "./base-node";
-import type { TextElement } from "@/types/timeline";
+import type { TextElement, Transform } from "@/types/timeline";
 import {
 	DEFAULT_TEXT_BACKGROUND,
 	DEFAULT_TEXT_ELEMENT,
@@ -72,6 +72,12 @@ function getLineStartX({
 	if (textAlign === "right") return -lineWidth;
 	return -lineWidth / 2;
 }
+
+const IDENTITY_TRANSFORM: Transform = {
+	scale: 1,
+	position: { x: 0, y: 0 },
+	rotate: 0,
+};
 
 const TEXT_DECORATION_THICKNESS_RATIO = 0.07;
 const STRIKETHROUGH_VERTICAL_RATIO = 0.35;
@@ -155,11 +161,6 @@ export class TextNode extends BaseNode<TextNodeParams> {
 			localTime,
 			duration: this.params.duration,
 		});
-		const animatedTransform = textAnimationState.transform;
-		const animatedOpacity = opacity * textAnimationState.opacityMultiplier;
-
-		const x = animatedTransform.position.x + this.params.canvasCenter.x;
-		const y = animatedTransform.position.y + this.params.canvasCenter.y;
 
 		const fontWeight = this.params.fontWeight === "bold" ? "bold" : "normal";
 		const fontStyle = this.params.fontStyle === "italic" ? "italic" : "normal";
@@ -182,7 +183,16 @@ export class TextNode extends BaseNode<TextNodeParams> {
 		) as GlobalCompositeOperation;
 
 		const granularity = this.params.textAnimation?.granularity ?? "whole";
+		const isSegmentedAnimation = granularity !== "whole";
 		const stagger = this.params.textAnimation?.stagger ?? 0;
+		const renderedTransform = isSegmentedAnimation
+			? transform
+			: textAnimationState.transform;
+		const renderedOpacity = isSegmentedAnimation
+			? opacity
+			: opacity * textAnimationState.opacityMultiplier;
+		const x = renderedTransform.position.x + this.params.canvasCenter.x;
+		const y = renderedTransform.position.y + this.params.canvasCenter.y;
 
 		renderer.context.save();
 		renderer.context.font = fontString;
@@ -275,6 +285,27 @@ export class TextNode extends BaseNode<TextNodeParams> {
 				}
 			}
 
+			if (granularity === "whole") {
+				ctx.filter =
+					textAnimationState.blurPx > 0 ? `blur(${textAnimationState.blurPx}px)` : "none";
+
+				for (let i = 0; i < lineCount; i++) {
+					const lineY = i * lineHeightPx - block.visualCenterOffset;
+					ctx.fillText(lines[i], 0, lineY);
+					drawTextDecoration({
+						ctx,
+						textDecoration: this.params.textDecoration ?? "none",
+						lineWidth: lineMetrics[i].width,
+						lineY,
+						metrics: lineMetrics[i],
+						scaledFontSize,
+						textAlign: this.params.textAlign,
+					});
+				}
+
+				return;
+			}
+
 			let animatedSegmentIndex = 0;
 
 			for (let i = 0; i < lineCount; i++) {
@@ -290,21 +321,23 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 				for (const segment of segments) {
 					const segmentWidth = ctx.measureText(segment).width;
-					const shouldAnimateSegment =
-						granularity === "whole" || /\S/.test(segment);
+					const shouldAnimateSegment = /\S/.test(segment);
 					const segmentDelay = shouldAnimateSegment
 						? animatedSegmentIndex * stagger
 						: Math.max(0, animatedSegmentIndex - 1) * stagger;
 					const segmentState = resolveTextAnimationState({
 						textAnimation: this.params.textAnimation,
-						transform: this.params.transform,
+						transform: IDENTITY_TRANSFORM,
 						localTime,
 						duration: this.params.duration,
 						segmentDelay,
 					});
 
 					ctx.save();
-					ctx.translate(cursorX, lineY);
+					ctx.translate(
+						cursorX + segmentState.transform.position.x,
+						lineY + segmentState.transform.position.y,
+					);
 					ctx.scale(segmentState.transform.scale, segmentState.transform.scale);
 					if (segmentState.transform.rotate) {
 						ctx.rotate((segmentState.transform.rotate * Math.PI) / 180);
@@ -312,6 +345,7 @@ export class TextNode extends BaseNode<TextNodeParams> {
 					ctx.filter =
 						segmentState.blurPx > 0 ? `blur(${segmentState.blurPx}px)` : "none";
 					ctx.globalAlpha = segmentState.opacityMultiplier;
+					ctx.textAlign = "left";
 					ctx.fillText(segment, 0, 0);
 					ctx.restore();
 
@@ -335,9 +369,9 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 		const applyTransform = (ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) => {
 			ctx.translate(x, y);
-			ctx.scale(animatedTransform.scale, animatedTransform.scale);
-			if (animatedTransform.rotate) {
-				ctx.rotate((animatedTransform.rotate * Math.PI) / 180);
+			ctx.scale(renderedTransform.scale, renderedTransform.scale);
+			if (renderedTransform.rotate) {
+				ctx.rotate((renderedTransform.rotate * Math.PI) / 180);
 			}
 		};
 
@@ -347,7 +381,7 @@ export class TextNode extends BaseNode<TextNodeParams> {
 			renderer.context.save();
 			applyTransform(renderer.context);
 			renderer.context.globalCompositeOperation = blendMode;
-			renderer.context.globalAlpha = animatedOpacity;
+			renderer.context.globalAlpha = renderedOpacity;
 			drawContent(renderer.context);
 			renderer.context.restore();
 			return;
@@ -362,7 +396,7 @@ export class TextNode extends BaseNode<TextNodeParams> {
 			renderer.context.save();
 			applyTransform(renderer.context);
 			renderer.context.globalCompositeOperation = blendMode;
-			renderer.context.globalAlpha = animatedOpacity;
+			renderer.context.globalAlpha = renderedOpacity;
 			drawContent(renderer.context);
 			renderer.context.restore();
 			return;
@@ -396,7 +430,7 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 		renderer.context.save();
 		renderer.context.globalCompositeOperation = blendMode;
-		renderer.context.globalAlpha = animatedOpacity;
+		renderer.context.globalAlpha = renderedOpacity;
 		renderer.context.drawImage(currentSource, 0, 0);
 		renderer.context.restore();
 	}
