@@ -27,7 +27,7 @@ void main() {
     -sinR * centered.x + cosR * centered.y
   );
   float verticalCompression = 1.0 - min(abs(tilt) * (0.08 + perspective * 0.18), 0.24);
-  float scaleY = max(0.0001, scale * verticalCompression);
+  float scaleY = max(0.0001, verticalCompression);
   float depth = max(0.42, 1.0 + rotated.y * tilt * (0.85 + perspective * 1.35));
   vec2 sampleOffset = vec2(
     rotated.x / depth,

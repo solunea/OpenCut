@@ -42,7 +42,7 @@ function applyZoomCpuEffect({
 	const perspective = renderState.perspective * renderState.strength;
 	const tiltShear = tilt * (0.12 + perspective * 0.28);
 	const verticalCompression = 1 - Math.min(Math.abs(tilt) * (0.08 + perspective * 0.18), 0.24);
-	const scaleY = Math.max(0.0001, scale * verticalCompression);
+	const scaleY = Math.max(0.0001, verticalCompression);
 	const focusPixelX = width * renderState.focusX;
 	const focusPixelY = height * renderState.focusY;
 	const centerX = width / 2;
@@ -55,17 +55,17 @@ function applyZoomCpuEffect({
 	const matrixC = cosRotation * shearX - sinRotation * scaleY;
 	const matrixD = sinRotation * shearX + cosRotation * scaleY;
 
-	context.imageSmoothingEnabled = true;
-	context.save();
-	context.setTransform(
-		matrixA,
-		matrixB,
-		matrixC,
-		matrixD,
-		centerX - matrixA * centerX - matrixC * centerY,
-		centerY - matrixB * centerX - matrixD * centerY,
-	);
-	context.drawImage(
+	const zoomCanvas = createOffscreenCanvas({ width, height });
+	const zoomContext = zoomCanvas.getContext("2d") as
+		| CanvasRenderingContext2D
+		| OffscreenCanvasRenderingContext2D
+		| null;
+	if (!zoomContext) {
+		return source;
+	}
+
+	zoomContext.imageSmoothingEnabled = true;
+	zoomContext.drawImage(
 		source,
 		focusPixelX - focusPixelX / scale,
 		focusPixelY - focusPixelY / scale,
@@ -76,6 +76,18 @@ function applyZoomCpuEffect({
 		width,
 		height,
 	);
+
+	context.imageSmoothingEnabled = true;
+	context.save();
+	context.setTransform(
+		matrixA,
+		matrixB,
+		matrixC,
+		matrixD,
+		centerX - matrixA * centerX - matrixC * centerY,
+		centerY - matrixB * centerX - matrixD * centerY,
+	);
+	context.drawImage(zoomCanvas, 0, 0, width, height);
 	context.restore();
 
 	if (renderState.keepFrameFixed) {
