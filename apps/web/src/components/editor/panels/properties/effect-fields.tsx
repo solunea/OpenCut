@@ -207,6 +207,12 @@ function TiltAxesField({
 					className="flex-1"
 					icon="X"
 					value={tiltXDraft.displayValue}
+					onScrub={(value) =>
+						onPreviewTiltX(
+							clamp({ value, min: tiltXParam.min, max: tiltXParam.max }),
+						)
+					}
+					onScrubEnd={onCommit}
 					onFocus={tiltXDraft.onFocus}
 					onChange={tiltXDraft.onChange}
 					onBlur={tiltXDraft.onBlur}
@@ -215,6 +221,12 @@ function TiltAxesField({
 					className="flex-1"
 					icon="Y"
 					value={tiltYDraft.displayValue}
+					onScrub={(value) =>
+						onPreviewTiltY(
+							clamp({ value, min: tiltYParam.min, max: tiltYParam.max }),
+						)
+					}
+					onScrubEnd={onCommit}
 					onFocus={tiltYDraft.onFocus}
 					onChange={tiltYDraft.onChange}
 					onBlur={tiltYDraft.onBlur}
