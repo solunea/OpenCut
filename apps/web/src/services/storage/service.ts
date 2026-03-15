@@ -325,6 +325,7 @@ class StorageService {
 			fps: mediaAsset.fps,
 			thumbnailUrl: mediaAsset.thumbnailUrl,
 			ephemeral: mediaAsset.ephemeral,
+			cursorTracking: mediaAsset.cursorTracking,
 		};
 
 		await mediaMetadataAdapter.set(mediaAsset.id, metadata);
@@ -376,6 +377,7 @@ class StorageService {
 			fps: metadata.fps,
 			thumbnailUrl: metadata.thumbnailUrl,
 			ephemeral: metadata.ephemeral,
+			cursorTracking: metadata.cursorTracking,
 		};
 	}
 
@@ -428,6 +430,7 @@ class StorageService {
 					fps: mediaAsset.fps,
 					thumbnailUrl: mediaAsset.thumbnailUrl,
 					ephemeral: mediaAsset.ephemeral,
+					cursorTracking: mediaAsset.cursorTracking,
 					mimeType: mediaAsset.file.type,
 					data: await fileToBase64({ file: mediaAsset.file }),
 				})),
@@ -501,6 +504,7 @@ class StorageService {
 							fps: mediaAsset.fps,
 							thumbnailUrl: mediaAsset.thumbnailUrl,
 							ephemeral: mediaAsset.ephemeral,
+							cursorTracking: mediaAsset.cursorTracking,
 						},
 					});
 				}),

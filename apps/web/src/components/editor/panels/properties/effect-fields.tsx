@@ -9,14 +9,27 @@ import {
 	type ReactNode,
 } from "react";
 import type { EffectDefinition } from "@/types/effects";
+import { Button } from "@/components/ui/button";
 import { clamp } from "@/utils/math";
 import { cn } from "@/utils/ui";
 import { NumberField } from "@/components/ui/number-field";
 import { EffectParamField } from "./effect-param-field";
+import { KeyframeToggle } from "./keyframe-toggle";
 import { SectionField, SectionFields } from "./section";
 import { usePropertyDraft } from "./hooks/use-property-draft";
 
 const ZOOM_EFFECT_TYPE = "zoom";
+
+type ZoomFocusControls = {
+	canKeyframe: boolean;
+	focusXIsKeyframedAtTime: boolean;
+	focusYIsKeyframedAtTime: boolean;
+	onPreviewFocus: (params: Record<string, number | string | boolean>) => void;
+	onCommitFocus: () => void;
+	onToggleFocusXKeyframe: () => void;
+	onToggleFocusYKeyframe: () => void;
+	onAddFocusKeyframes: () => void;
+};
 
 function resolveNumericValue({
 	value,
@@ -39,6 +52,7 @@ export function EffectFields({
 	onPreviewParam,
 	onPreviewParams,
 	onCommit,
+	zoomFocusControls,
 }: {
 	effectType: string;
 	definition: EffectDefinition;
@@ -46,6 +60,7 @@ export function EffectFields({
 	onPreviewParam: (key: string) => (value: number | string | boolean) => void;
 	onPreviewParams: (params: Record<string, number | string | boolean>) => void;
 	onCommit: () => void;
+	zoomFocusControls?: ZoomFocusControls;
 }) {
 	const fields = useMemo(() => {
 		const items: ReactNode[] = [];
@@ -62,8 +77,9 @@ export function EffectFields({
 							key="zoom-focus"
 							focusX={resolveNumericValue({ value: values.focusX, fallback: 50 })}
 							focusY={resolveNumericValue({ value: values.focusY, fallback: 50 })}
-							onPreviewFocus={onPreviewParams}
-							onCommit={onCommit}
+							onPreviewFocus={zoomFocusControls?.onPreviewFocus ?? onPreviewParams}
+							onCommit={zoomFocusControls?.onCommitFocus ?? onCommit}
+							zoomFocusControls={zoomFocusControls}
 						/>,
 					);
 					hasInsertedZoomFocusField = true;
@@ -83,7 +99,15 @@ export function EffectFields({
 		}
 
 		return items;
-	}, [definition.params, effectType, onCommit, onPreviewParam, onPreviewParams, values]);
+	}, [
+		definition.params,
+		effectType,
+		onCommit,
+		onPreviewParam,
+		onPreviewParams,
+		values,
+		zoomFocusControls,
+	]);
 
 	return <SectionFields>{fields}</SectionFields>;
 }
@@ -93,11 +117,13 @@ function ZoomFocusField({
 	focusY,
 	onPreviewFocus,
 	onCommit,
+	zoomFocusControls,
 }: {
 	focusX: number;
 	focusY: number;
 	onPreviewFocus: (params: Record<string, number | string | boolean>) => void;
 	onCommit: () => void;
+	zoomFocusControls?: ZoomFocusControls;
 }) {
 	const boxRef = useRef<HTMLDivElement>(null);
 	const isDraggingRef = useRef(false);
@@ -183,9 +209,11 @@ function ZoomFocusField({
 			<div className="flex flex-col gap-3">
 				<div
 					ref={boxRef}
-					className="relative aspect-video w-full cursor-crosshair overflow-hidden rounded-md border bg-muted/30"
+					className="relative aspect-video w-full cursor-crosshair overflow-hidden rounded-md border bg-muted/30 select-none touch-none"
 					onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
+						event.preventDefault();
 						isDraggingRef.current = true;
+						event.currentTarget.setPointerCapture(event.pointerId);
 						updateFromClientPosition({
 							clientX: event.clientX,
 							clientY: event.clientY,
@@ -212,23 +240,59 @@ function ZoomFocusField({
 						}}
 					/>
 				</div>
+				<div className="flex items-center justify-between gap-2">
+					<div className="text-muted-foreground text-xs">
+						Drag in the focus window to move the zoom target.
+					</div>
+					{zoomFocusControls && (
+						<Button
+							type="button"
+							size="sm"
+							variant="outline"
+							onClick={zoomFocusControls.onAddFocusKeyframes}
+							disabled={!zoomFocusControls.canKeyframe}
+						>
+							Add keyframes
+						</Button>
+					)}
+				</div>
 				<div className="flex items-center gap-2">
-					<NumberField
-						icon="X"
-						className="flex-1"
-						value={focusXDraft.displayValue}
-						onFocus={focusXDraft.onFocus}
-						onChange={focusXDraft.onChange}
-						onBlur={focusXDraft.onBlur}
-					/>
-					<NumberField
-						icon="Y"
-						className="flex-1"
-						value={focusYDraft.displayValue}
-						onFocus={focusYDraft.onFocus}
-						onChange={focusYDraft.onChange}
-						onBlur={focusYDraft.onBlur}
-					/>
+					<div className="flex flex-1 items-center gap-1">
+						{zoomFocusControls && (
+							<KeyframeToggle
+								isActive={zoomFocusControls.focusXIsKeyframedAtTime}
+								isDisabled={!zoomFocusControls.canKeyframe}
+								title="Toggle focus X keyframe"
+								onToggle={zoomFocusControls.onToggleFocusXKeyframe}
+							/>
+						)}
+						<NumberField
+							icon="X"
+							className="flex-1"
+							value={focusXDraft.displayValue}
+							onFocus={focusXDraft.onFocus}
+							onChange={focusXDraft.onChange}
+							onBlur={focusXDraft.onBlur}
+						/>
+					</div>
+					<div className="flex flex-1 items-center gap-1">
+						{zoomFocusControls && (
+							<KeyframeToggle
+								isActive={zoomFocusControls.focusYIsKeyframedAtTime}
+								isDisabled={!zoomFocusControls.canKeyframe}
+								title="Toggle focus Y keyframe"
+								onToggle={zoomFocusControls.onToggleFocusYKeyframe}
+							/>
+						)}
+						<NumberField
+							icon="Y"
+							className="flex-1"
+							value={focusYDraft.displayValue}
+							onFocus={focusYDraft.onFocus}
+							onChange={focusYDraft.onChange}
+							onBlur={focusYDraft.onBlur}
+						/>
+					</div>
 				</div>
 			</div>
 		</SectionField>

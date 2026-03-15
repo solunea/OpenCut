@@ -83,6 +83,44 @@ export class MediaManager {
 		}
 	}
 
+	async updateMediaAsset({
+		projectId,
+		id,
+		updates,
+	}: {
+		projectId: string;
+		id: string;
+		updates: Partial<Omit<MediaAsset, "id">>;
+	}): Promise<MediaAsset | null> {
+		const assetIndex = this.assets.findIndex((asset) => asset.id === id);
+		if (assetIndex < 0) {
+			return null;
+		}
+
+		const currentAsset = this.assets[assetIndex];
+		const updatedAsset: MediaAsset = {
+			...currentAsset,
+			...updates,
+			id,
+		};
+		const nextAssets = [...this.assets];
+		nextAssets[assetIndex] = updatedAsset;
+		this.assets = nextAssets;
+		this.notify();
+
+		try {
+			await storageService.saveMediaAsset({ projectId, mediaAsset: updatedAsset });
+			return updatedAsset;
+		} catch (error) {
+			console.error("Failed to update media asset:", error);
+			const restoredAssets = [...this.assets];
+			restoredAssets[assetIndex] = currentAsset;
+			this.assets = restoredAssets;
+			this.notify();
+			return null;
+		}
+	}
+
 	async loadProjectMedia({ projectId }: { projectId: string }): Promise<void> {
 		this.isLoading = true;
 		this.notify();

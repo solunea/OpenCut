@@ -17,6 +17,7 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -31,6 +32,7 @@ import { useFileUpload } from "@/hooks/use-file-upload";
 import { useRevealItem } from "@/hooks/use-reveal-item";
 import { processMediaAssets } from "@/lib/media/processing";
 import { buildElementFromMedia } from "@/lib/timeline/element-utils";
+import { TabCaptureDialog } from "@/components/editor/panels/assets/tab-capture-dialog";
 import {
 	type MediaSortKey,
 	type MediaSortOrder,
@@ -71,12 +73,17 @@ export function MediaView() {
 
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [progress, setProgress] = useState(0);
+	const [isCaptureDialogOpen, setIsCaptureDialogOpen] = useState(false);
 
-	const processFiles = async ({ files }: { files: FileList }) => {
+	const processFiles = async ({
+		files,
+	}: {
+		files: FileList | File[];
+	}): Promise<void> => {
 		if (!files || files.length === 0) return;
 		if (!activeProject) {
 			toast.error("No active project");
-			return;
+			throw new Error("No active project");
 		}
 
 		setIsProcessing(true);
@@ -96,6 +103,7 @@ export function MediaView() {
 		} catch (error) {
 			console.error("Error processing files:", error);
 			toast.error("Failed to process files");
+			throw error instanceof Error ? error : new Error("Failed to process files");
 		} finally {
 			setIsProcessing(false);
 			setProgress(0);
@@ -106,7 +114,9 @@ export function MediaView() {
 		useFileUpload({
 			accept: "image/*,video/*,audio/*,.lottie,.json,application/json",
 			multiple: true,
-			onFilesSelected: (files) => processFiles({ files }),
+			onFilesSelected: (files) => {
+				void processFiles({ files }).catch(() => undefined);
+			},
 		});
 
 	const handleRemove = async ({
@@ -176,6 +186,12 @@ export function MediaView() {
 	return (
 		<>
 			<input {...fileInputProps} />
+			<TabCaptureDialog
+				disabled={isProcessing}
+				isOpen={isCaptureDialogOpen}
+				onOpenChange={setIsCaptureDialogOpen}
+				onImport={({ files }) => processFiles({ files })}
+			/>
 
 			<PanelView
 				title="Assets"
@@ -187,7 +203,8 @@ export function MediaView() {
 						sortBy={mediaSortBy}
 						sortOrder={mediaSortOrder}
 						onSort={handleSort}
-						onImport={openFilePicker}
+						onImportFiles={openFilePicker}
+						onCaptureTab={() => setIsCaptureDialogOpen(true)}
 					/>
 				}
 				className={cn(isDragOver && "bg-accent/30")}
@@ -503,7 +520,8 @@ function MediaActions({
 	sortBy,
 	sortOrder,
 	onSort,
-	onImport,
+	onImportFiles,
+	onCaptureTab,
 }: {
 	mediaViewMode: MediaViewMode;
 	setMediaViewMode: (mode: MediaViewMode) => void;
@@ -511,7 +529,8 @@ function MediaActions({
 	sortBy: MediaSortKey;
 	sortOrder: MediaSortOrder;
 	onSort: ({ key }: { key: MediaSortKey }) => void;
-	onImport: () => void;
+	onImportFiles: () => void;
+	onCaptureTab: () => void;
 }) {
 	return (
 		<div className="flex gap-1.5">
@@ -595,16 +614,34 @@ function MediaActions({
 					</TooltipContent>
 				</Tooltip>
 			</TooltipProvider>
-			<Button
-				variant="outline"
-				onClick={onImport}
-				disabled={isProcessing}
-				size="sm"
-				className="items-center justify-center gap-1.5"
-			>
-				<HugeiconsIcon icon={CloudUploadIcon} />
-				Import
-			</Button>
+			<DropdownMenu>
+				<DropdownMenuTrigger asChild>
+					<Button
+						variant="outline"
+						disabled={isProcessing}
+						size="sm"
+						className="items-center justify-center gap-1.5"
+					>
+						<HugeiconsIcon icon={CloudUploadIcon} />
+						Import
+					</Button>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="end">
+					<DropdownMenuItem
+						icon={<HugeiconsIcon icon={CloudUploadIcon} />}
+						onClick={onImportFiles}
+					>
+						Import files
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem
+						icon={<HugeiconsIcon icon={Video01Icon} />}
+						onClick={onCaptureTab}
+					>
+						Capture tab
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
 		</div>
 	);
 }

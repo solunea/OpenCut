@@ -3,6 +3,12 @@
 import { useEffect, useState, type DragEvent } from "react";
 import type { Effect } from "@/types/effects";
 import type { VisualElement } from "@/types/timeline";
+import { getChannel } from "@/lib/animation";
+import {
+	resolveEffectParamsAtTime,
+	upsertEffectParamKeyframe as previewEffectParamKeyframe,
+} from "@/lib/animation/effect-param-channel";
+import { TIME_EPSILON_SECONDS } from "@/constants/animation-constants";
 import { getEffect } from "@/lib/effects/registry";
 import { useEditor } from "@/hooks/use-editor";
 import { usePropertiesStore } from "@/stores/properties-store";
@@ -14,6 +20,7 @@ import {
 } from "./section";
 import { EffectFields } from "./effect-fields";
 import { Button } from "@/components/ui/button";
+import { useElementPlayhead } from "./hooks/use-element-playhead";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
 	ArrowLeft01Icon,
@@ -127,6 +134,161 @@ function ClipEffectSection({
 }) {
 	const editor = useEditor();
 	const definition = getEffect({ effectType: effect.type });
+	const { localTime, isPlayheadWithinElementRange } = useElementPlayhead({
+		startTime: element.startTime,
+		duration: element.duration,
+	});
+	const resolvedValues =
+		effect.type === "zoom" && isPlayheadWithinElementRange
+			? resolveEffectParamsAtTime({
+					effect,
+					animations: element.animations,
+					localTime,
+				})
+			: effect.params;
+
+	const buildEffectParamPath = (paramKey: string) =>
+		`effects.${effect.id}.params.${paramKey}`;
+	const getEffectParamChannel = (paramKey: string) =>
+		getChannel({
+			animations: element.animations,
+			propertyPath: buildEffectParamPath(paramKey),
+		});
+	const getEffectParamKeyframeIdAtTime = (paramKey: string) =>
+		getEffectParamChannel(paramKey)?.keyframes.find(
+			(keyframe) => Math.abs(keyframe.time - localTime) <= TIME_EPSILON_SECONDS,
+		)?.id ?? null;
+	const hasEffectParamKeyframes = (paramKey: string) =>
+		Boolean(getEffectParamChannel(paramKey)?.keyframes.length);
+
+	const commitPreview = () => editor.timeline.commitPreview();
+
+	const previewZoomFocus = (params: Record<string, number | string | boolean>) => {
+		const nextParams: Record<string, number> = {};
+		if ("focusX" in params) {
+			const focusX = Number(params.focusX);
+			if (Number.isFinite(focusX)) {
+				nextParams.focusX = focusX;
+			}
+		}
+		if ("focusY" in params) {
+			const focusY = Number(params.focusY);
+			if (Number.isFinite(focusY)) {
+				nextParams.focusY = focusY;
+			}
+		}
+
+		const shouldAnimateX =
+			typeof nextParams.focusX === "number" &&
+			isPlayheadWithinElementRange &&
+			hasEffectParamKeyframes("focusX");
+		const shouldAnimateY =
+			typeof nextParams.focusY === "number" &&
+			isPlayheadWithinElementRange &&
+			hasEffectParamKeyframes("focusY");
+
+		let nextAnimations = element.animations;
+		if (shouldAnimateX) {
+			nextAnimations = previewEffectParamKeyframe({
+				animations: nextAnimations,
+				effectId: effect.id,
+				paramKey: "focusX",
+				time: localTime,
+				value: nextParams.focusX,
+			});
+		}
+		if (shouldAnimateY) {
+			nextAnimations = previewEffectParamKeyframe({
+				animations: nextAnimations,
+				effectId: effect.id,
+				paramKey: "focusY",
+				time: localTime,
+				value: nextParams.focusY,
+			});
+		}
+
+		const updatedEffects = (element.effects ?? []).map((existing) =>
+			existing.id !== effect.id
+				? existing
+				: {
+						...existing,
+						params: {
+							...existing.params,
+							...(shouldAnimateX ? {} : { focusX: nextParams.focusX ?? existing.params.focusX }),
+							...(shouldAnimateY ? {} : { focusY: nextParams.focusY ?? existing.params.focusY }),
+						},
+					},
+		);
+
+		editor.timeline.previewElements({
+			updates: [
+				{
+					trackId,
+					elementId: element.id,
+					updates: {
+						effects: updatedEffects,
+						...(shouldAnimateX || shouldAnimateY ? { animations: nextAnimations } : {}),
+					},
+				},
+			],
+		});
+	};
+
+	const toggleFocusKeyframe = ({
+		paramKey,
+		value,
+	}: {
+		paramKey: "focusX" | "focusY";
+		value: number;
+	}) => {
+		if (!isPlayheadWithinElementRange) {
+			return;
+		}
+
+		const keyframeIdAtTime = getEffectParamKeyframeIdAtTime(paramKey);
+		if (keyframeIdAtTime) {
+			editor.timeline.removeEffectParamKeyframe({
+				trackId,
+				elementId: element.id,
+				effectId: effect.id,
+				paramKey,
+				keyframeId: keyframeIdAtTime,
+			});
+			return;
+		}
+
+		editor.timeline.upsertEffectParamKeyframe({
+			trackId,
+			elementId: element.id,
+			effectId: effect.id,
+			paramKey,
+			time: localTime,
+			value,
+		});
+	};
+
+	const addFocusKeyframes = () => {
+		if (!isPlayheadWithinElementRange || effect.type !== "zoom") {
+			return;
+		}
+
+		editor.timeline.upsertEffectParamKeyframe({
+			trackId,
+			elementId: element.id,
+			effectId: effect.id,
+			paramKey: "focusX",
+			time: localTime,
+			value: Number(resolvedValues.focusX ?? effect.params.focusX ?? 50),
+		});
+		editor.timeline.upsertEffectParamKeyframe({
+			trackId,
+			elementId: element.id,
+			effectId: effect.id,
+			paramKey: "focusY",
+			time: localTime,
+			value: Number(resolvedValues.focusY ?? effect.params.focusY ?? 50),
+		});
+	};
 
 	const previewParam = (key: string) => (value: number | string | boolean) => {
 		const updatedEffects = (element.effects ?? []).map((existing) =>
@@ -216,10 +378,34 @@ function ClipEffectSection({
 					<EffectFields
 						effectType={effect.type}
 						definition={definition}
-						values={effect.params}
+						values={resolvedValues}
 						onPreviewParam={previewParam}
 						onPreviewParams={previewParams}
 						onCommit={commitParam}
+						zoomFocusControls={
+							effect.type === "zoom"
+								? {
+										canKeyframe: isPlayheadWithinElementRange,
+										focusXIsKeyframedAtTime:
+											getEffectParamKeyframeIdAtTime("focusX") !== null,
+										focusYIsKeyframedAtTime:
+											getEffectParamKeyframeIdAtTime("focusY") !== null,
+										onPreviewFocus: previewZoomFocus,
+										onCommitFocus: commitPreview,
+										onToggleFocusXKeyframe: () =>
+											toggleFocusKeyframe({
+												paramKey: "focusX",
+												value: Number(resolvedValues.focusX ?? effect.params.focusX ?? 50),
+											}),
+										onToggleFocusYKeyframe: () =>
+											toggleFocusKeyframe({
+												paramKey: "focusY",
+												value: Number(resolvedValues.focusY ?? effect.params.focusY ?? 50),
+											}),
+										onAddFocusKeyframes: addFocusKeyframes,
+									}
+								: undefined
+						}
 					/>
 				</SectionContent>
 			)}

@@ -812,7 +812,7 @@ export function renderTiledMedia({
 	const shouldShowTitle = showTitle || !imageUrl;
 
 	return (
-		<>
+		<div className="relative size-full overflow-hidden">
 			{shouldShowGrid && (
 				<div
 					className="absolute inset-y-0"
@@ -832,7 +832,7 @@ export function renderTiledMedia({
 				<div
 					className="absolute inset-y-0"
 					style={{
-						backgroundImage: `url(${imageUrl})`,
+						backgroundImage: `url("${imageUrl}")`,
 						backgroundRepeat: "repeat-x",
 						backgroundSize: `${tileWidth}px ${trackHeight}px`,
 						backgroundPosition: "left center",
@@ -853,7 +853,7 @@ export function renderTiledMedia({
 					displayedDuration={resolvedClipDuration}
 				/>
 			)}
-		</>
+		</div>
 	);
 }
 
