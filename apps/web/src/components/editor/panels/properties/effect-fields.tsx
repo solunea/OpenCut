@@ -8,7 +8,10 @@ import {
 	type PointerEvent as ReactPointerEvent,
 	type ReactNode,
 } from "react";
-import type { EffectDefinition } from "@/types/effects";
+import type {
+	EffectDefinition,
+	NumberEffectParamDefinition,
+} from "@/types/effects";
 import { Button } from "@/components/ui/button";
 import { clamp } from "@/utils/math";
 import { cn } from "@/utils/ui";
@@ -87,16 +90,45 @@ export function EffectFields({
 			if (
 				effectType === ZOOM_EFFECT_TYPE &&
 				!Boolean(values.tiltEnabled) &&
-				(param.key === "rotation" || param.key === "perspective")
+				(param.key === "tiltX" ||
+					param.key === "tiltY" ||
+					param.key === "rotationX" ||
+					param.key === "perspective")
 			) {
 				continue;
 			}
 
 			if (
 				effectType === ZOOM_EFFECT_TYPE &&
-				!Boolean(values.tiltEnabled) &&
-				param.key === "tilt"
+				(param.key === "tiltX" || param.key === "tiltY")
 			) {
+				if (param.key === "tiltX") {
+					const tiltXParam = param as NumberEffectParamDefinition;
+					const tiltYParam = definition.params.find(
+						(candidate) => candidate.key === "tiltY",
+					) as NumberEffectParamDefinition | undefined;
+
+					if (tiltYParam) {
+						items.push(
+							<TiltAxesField
+								key="tilt-axes"
+								tiltXParam={tiltXParam}
+								tiltYParam={tiltYParam}
+								tiltXValue={resolveNumericValue({
+									value: values.tiltX,
+									fallback: tiltXParam.default,
+								})}
+								tiltYValue={resolveNumericValue({
+									value: values.tiltY,
+									fallback: tiltYParam.default,
+								})}
+								onPreviewTiltX={onPreviewParam("tiltX")}
+								onPreviewTiltY={onPreviewParam("tiltY")}
+								onCommit={onCommit}
+							/>,
+						);
+					}
+				}
 				continue;
 			}
 
@@ -123,6 +155,73 @@ export function EffectFields({
 	]);
 
 	return <SectionFields>{fields}</SectionFields>;
+}
+
+function TiltAxesField({
+	tiltXParam,
+	tiltYParam,
+	tiltXValue,
+	tiltYValue,
+	onPreviewTiltX,
+	onPreviewTiltY,
+	onCommit,
+}: {
+	tiltXParam: NumberEffectParamDefinition;
+	tiltYParam: NumberEffectParamDefinition;
+	tiltXValue: number;
+	tiltYValue: number;
+	onPreviewTiltX: (value: number | string | boolean) => void;
+	onPreviewTiltY: (value: number | string | boolean) => void;
+	onCommit: () => void;
+}) {
+	const tiltXDraft = usePropertyDraft({
+		displayValue: String(tiltXValue),
+		parse: (input) => {
+			const parsed = Number.parseFloat(input);
+			if (Number.isNaN(parsed)) {
+				return null;
+			}
+			return clamp({ value: parsed, min: tiltXParam.min, max: tiltXParam.max });
+		},
+		onPreview: (value) => onPreviewTiltX(value),
+		onCommit,
+	});
+
+	const tiltYDraft = usePropertyDraft({
+		displayValue: String(tiltYValue),
+		parse: (input) => {
+			const parsed = Number.parseFloat(input);
+			if (Number.isNaN(parsed)) {
+				return null;
+			}
+			return clamp({ value: parsed, min: tiltYParam.min, max: tiltYParam.max });
+		},
+		onPreview: (value) => onPreviewTiltY(value),
+		onCommit,
+	});
+
+	return (
+		<SectionField label="Tilt">
+			<div className="flex items-center gap-3">
+				<NumberField
+					className="flex-1"
+					icon="X"
+					value={tiltXDraft.displayValue}
+					onFocus={tiltXDraft.onFocus}
+					onChange={tiltXDraft.onChange}
+					onBlur={tiltXDraft.onBlur}
+				/>
+				<NumberField
+					className="flex-1"
+					icon="Y"
+					value={tiltYDraft.displayValue}
+					onFocus={tiltYDraft.onFocus}
+					onChange={tiltYDraft.onChange}
+					onBlur={tiltYDraft.onBlur}
+				/>
+			</div>
+		</SectionField>
+	);
 }
 
 function ZoomFocusField({

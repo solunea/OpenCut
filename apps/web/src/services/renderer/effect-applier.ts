@@ -37,21 +37,28 @@ function applyZoomCpuEffect({
 		zoomTransition,
 	});
 	const scale = Math.max(1, 1 + (renderState.zoom - 1) * renderState.strength);
-	const tilt = renderState.tilt * renderState.strength;
-	const rotation = ((renderState.rotation * Math.PI) / 180) * renderState.strength;
+	const tiltX = renderState.tiltX * renderState.strength;
+	const tiltY = renderState.tiltY * renderState.strength;
+	const rotationX = ((renderState.rotationX * Math.PI) / 180) * renderState.strength;
 	const perspective = renderState.perspective * renderState.strength;
-	const tiltShear = tilt * (0.12 + perspective * 0.28);
-	const verticalCompression = 1 - Math.min(Math.abs(tilt) * (0.08 + perspective * 0.18), 0.24);
+	const tiltShearX = tiltY * (0.12 + perspective * 0.28);
+	const tiltShearY = tiltX * (0.12 + perspective * 0.28);
+	const horizontalCompression =
+		1 - Math.min(Math.abs(tiltX) * (0.08 + perspective * 0.18), 0.24);
+	const verticalCompression =
+		1 - Math.min(Math.abs(tiltY) * (0.08 + perspective * 0.18), 0.24);
+	const scaleX = Math.max(0.0001, horizontalCompression);
 	const scaleY = Math.max(0.0001, verticalCompression);
 	const focusPixelX = width * renderState.focusX;
 	const focusPixelY = height * renderState.focusY;
 	const centerX = width / 2;
 	const centerY = height / 2;
-	const shearX = tiltShear * (width / height);
-	const cosRotation = Math.cos(rotation);
-	const sinRotation = Math.sin(rotation);
-	const matrixA = cosRotation;
-	const matrixB = sinRotation;
+	const shearX = tiltShearX * (width / height);
+	const shearY = tiltShearY * (height / width);
+	const cosRotation = Math.cos(rotationX);
+	const sinRotation = Math.sin(rotationX);
+	const matrixA = cosRotation * scaleX;
+	const matrixB = sinRotation * scaleX + shearY;
 	const matrixC = cosRotation * shearX - sinRotation * scaleY;
 	const matrixD = sinRotation * shearX + cosRotation * scaleY;
 

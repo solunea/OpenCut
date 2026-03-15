@@ -14,8 +14,9 @@ export interface ZoomTransitionState {
 	focusX: number;
 	focusY: number;
 	keepFrameFixed: boolean;
-	tilt: number;
-	rotation: number;
+	tiltX: number;
+	tiltY: number;
+	rotationX: number;
 	perspective: number;
 }
 

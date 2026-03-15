@@ -153,23 +153,37 @@ function lerp({
 	return leftValue + (rightValue - leftValue) * progress;
 }
 
-function resolveTiltValue({
+function resolveTiltX({
 	effectParams,
 }: {
 	effectParams: EffectParamValues;
 }): number {
 	return Math.min(
-		Math.max(resolveNumber({ value: effectParams.tilt, fallback: 18 }), -100),
+		Math.max(resolveNumber({ value: effectParams.tiltX, fallback: 0 }), -100),
 		100,
 	) / 100;
 }
 
-function resolveTiltRotation({
+function resolveTiltY({
 	effectParams,
 }: {
 	effectParams: EffectParamValues;
 }): number {
-	return resolveNumber({ value: effectParams.rotation, fallback: 4 });
+	return Math.min(
+		Math.max(resolveNumber({ value: effectParams.tiltY, fallback: 18 }), -100),
+		100,
+	) / 100;
+}
+
+function resolveRotationX({
+	effectParams,
+}: {
+	effectParams: EffectParamValues;
+}): number {
+	return resolveNumber({
+		value: effectParams.rotationX,
+		fallback: resolveNumber({ value: effectParams.rotation, fallback: 4 }),
+	});
 }
 
 function resolveTiltPerspective({
@@ -272,8 +286,9 @@ export function resolveZoomTransitionState({
 		focusX: clamp01(resolveNumber({ value: effectParams.focusX, fallback: 50 }) / 100),
 		focusY: clamp01(resolveNumber({ value: effectParams.focusY, fallback: 50 }) / 100),
 		keepFrameFixed,
-		tilt: tiltEnabled ? resolveTiltValue({ effectParams }) : 0,
-		rotation: tiltEnabled ? resolveTiltRotation({ effectParams }) : 0,
+		tiltX: tiltEnabled ? resolveTiltX({ effectParams }) : 0,
+		tiltY: tiltEnabled ? resolveTiltY({ effectParams }) : 0,
+		rotationX: tiltEnabled ? resolveRotationX({ effectParams }) : 0,
 		perspective: tiltEnabled ? resolveTiltPerspective({ effectParams }) : 0,
 	};
 }
@@ -337,14 +352,19 @@ export function resolveZoomRenderState({
 				progress: focusTransitionProgress,
 			}),
 			keepFrameFixed: targetState.keepFrameFixed,
-			tilt: lerp({
-				leftValue: previousState.tilt,
-				rightValue: targetState.tilt,
+			tiltX: lerp({
+				leftValue: previousState.tiltX,
+				rightValue: targetState.tiltX,
 				progress: focusTransitionProgress,
 			}),
-			rotation: lerp({
-				leftValue: previousState.rotation,
-				rightValue: targetState.rotation,
+			tiltY: lerp({
+				leftValue: previousState.tiltY,
+				rightValue: targetState.tiltY,
+				progress: focusTransitionProgress,
+			}),
+			rotationX: lerp({
+				leftValue: previousState.rotationX,
+				rightValue: targetState.rotationX,
 				progress: focusTransitionProgress,
 			}),
 			perspective: lerp({
@@ -418,8 +438,17 @@ export const zoomEffectDefinition: EffectDefinition = {
 			default: false,
 		},
 		{
-			key: "tilt",
-			label: "Tilt Amount",
+			key: "tiltX",
+			label: "Tilt X",
+			type: "number",
+			default: 0,
+			min: -100,
+			max: 100,
+			step: 1,
+		},
+		{
+			key: "tiltY",
+			label: "Tilt Y",
 			type: "number",
 			default: 18,
 			min: -100,
@@ -427,8 +456,8 @@ export const zoomEffectDefinition: EffectDefinition = {
 			step: 1,
 		},
 		{
-			key: "rotation",
-			label: "Rotation",
+			key: "rotationX",
+			label: "Rotation X",
 			type: "number",
 			default: 4,
 			min: -25,
@@ -486,8 +515,9 @@ export const zoomEffectDefinition: EffectDefinition = {
 					return {
 						u_focus: [renderState.focusX, renderState.focusY],
 						u_zoom: renderState.zoom,
-						u_tilt: renderState.tilt,
-						u_rotation: renderState.rotation,
+						u_tiltX: renderState.tiltX,
+						u_tiltY: renderState.tiltY,
+						u_rotationX: renderState.rotationX,
 						u_perspective: renderState.perspective,
 						u_strength: renderState.strength,
 						u_keepFrameFixed: renderState.keepFrameFixed ? 1 : 0,

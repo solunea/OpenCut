@@ -92,16 +92,18 @@ function resolveZoomFrameStyleState({
 	duration: number;
 }):
 	| {
-			tilt: number;
-			rotation: number;
+			tiltX: number;
+			tiltY: number;
+			rotationX: number;
 			perspective: number;
 			strength: number;
 	  }
 	| undefined {
 	let resolvedState:
 		| {
-				tilt: number;
-				rotation: number;
+				tiltX: number;
+				tiltY: number;
+				rotationX: number;
 				perspective: number;
 				strength: number;
 		  }
@@ -125,16 +127,18 @@ function resolveZoomFrameStyleState({
 		});
 
 		if (
-			Math.abs(renderState.tilt) <= 0.0001 &&
-			Math.abs(renderState.rotation) <= 0.0001 &&
+			Math.abs(renderState.tiltX) <= 0.0001 &&
+			Math.abs(renderState.tiltY) <= 0.0001 &&
+			Math.abs(renderState.rotationX) <= 0.0001 &&
 			renderState.perspective <= 0.0001
 		) {
 			continue;
 		}
 
 		resolvedState = {
-			tilt: renderState.tilt,
-			rotation: renderState.rotation,
+			tiltX: renderState.tiltX,
+			tiltY: renderState.tiltY,
+			rotationX: renderState.rotationX,
 			perspective: renderState.perspective,
 			strength: renderState.strength,
 		};
@@ -150,8 +154,9 @@ function resolveTiltAwareFrameStyle({
 	frameStyle: Required<VideoFrameStyle>;
 	zoomFrameState:
 		| {
-				tilt: number;
-				rotation: number;
+				tiltX: number;
+				tiltY: number;
+				rotationX: number;
 				perspective: number;
 				strength: number;
 		  }
@@ -161,17 +166,20 @@ function resolveTiltAwareFrameStyle({
 		return frameStyle;
 	}
 
-	const tiltAmount = Math.abs(zoomFrameState.tilt) * zoomFrameState.strength;
+	const tiltAmount =
+		Math.max(Math.abs(zoomFrameState.tiltX), Math.abs(zoomFrameState.tiltY)) *
+		zoomFrameState.strength;
 	const rotationAmount =
-		Math.min(Math.abs(zoomFrameState.rotation) / 25, 1) * zoomFrameState.strength;
+		(Math.abs(zoomFrameState.rotationX) / 25) * zoomFrameState.strength;
 	const perspectiveAmount = zoomFrameState.perspective * zoomFrameState.strength;
 	const radiusScale = 1 - perspectiveAmount * 0.2 - tiltAmount * 0.12;
 	const shadowLift = 1 + perspectiveAmount * 0.45 + tiltAmount * 0.25;
 	const directionalOffsetX =
-		zoomFrameState.rotation * 0.18 + zoomFrameState.tilt * perspectiveAmount * 6;
+		zoomFrameState.tiltY * perspectiveAmount * 6 + zoomFrameState.tiltX * 4;
 	const directionalOffsetY =
-		Math.sign(zoomFrameState.tilt || 1) *
-		(tiltAmount * (8 + perspectiveAmount * 14) + rotationAmount * 3);
+		Math.sign(zoomFrameState.tiltY || 1) *
+			(tiltAmount * (8 + perspectiveAmount * 14) + rotationAmount * 3) +
+		zoomFrameState.rotationX * 0.12;
 
 	return {
 		...frameStyle,
