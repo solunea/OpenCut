@@ -10,6 +10,7 @@ import {
 	resolveOpacityAtTime,
 	resolveTransformAtTime,
 } from "@/lib/animation";
+import { resolveZoomRenderState } from "@/lib/effects/definitions/zoom";
 import {
 	getClampedVideoSourceTimeFromTimelineTime,
 	getSourceTimeFromTimelineTime,
@@ -64,6 +65,130 @@ function resolveFrameStyle(frameStyle?: VideoFrameStyle): Required<VideoFrameSty
 		shadowOffsetY: frameStyle?.shadowOffsetY ?? DEFAULT_FRAME_STYLE.shadowOffsetY,
 		shadowOpacity: frameStyle?.shadowOpacity ?? DEFAULT_FRAME_STYLE.shadowOpacity,
 		shadowColor: frameStyle?.shadowColor ?? DEFAULT_FRAME_STYLE.shadowColor,
+	};
+}
+
+function clampNumber({
+	value,
+	min,
+	max,
+}: {
+	value: number;
+	min: number;
+	max: number;
+}): number {
+	return Math.min(Math.max(value, min), max);
+}
+
+function resolveZoomFrameStyleState({
+	effects,
+	animations,
+	localTime,
+	duration,
+}: {
+	effects: Effect[];
+	animations?: ElementAnimations;
+	localTime: number;
+	duration: number;
+}):
+	| {
+			tilt: number;
+			rotation: number;
+			perspective: number;
+			strength: number;
+	  }
+	| undefined {
+	let resolvedState:
+		| {
+				tilt: number;
+				rotation: number;
+				perspective: number;
+				strength: number;
+		  }
+		| undefined;
+
+	for (const effect of effects) {
+		if (!effect.enabled || effect.type !== "zoom") {
+			continue;
+		}
+
+		const effectParams = resolveEffectParamsAtTime({
+			effect,
+			animations,
+			localTime,
+		});
+		const progress = duration <= 0 ? 1 : Math.min(localTime / duration, 1);
+		const renderState = resolveZoomRenderState({
+			effectParams,
+			progress,
+			duration,
+		});
+
+		if (
+			Math.abs(renderState.tilt) <= 0.0001 &&
+			Math.abs(renderState.rotation) <= 0.0001 &&
+			renderState.perspective <= 0.0001
+		) {
+			continue;
+		}
+
+		resolvedState = {
+			tilt: renderState.tilt,
+			rotation: renderState.rotation,
+			perspective: renderState.perspective,
+			strength: renderState.strength,
+		};
+	}
+
+	return resolvedState;
+}
+
+function resolveTiltAwareFrameStyle({
+	frameStyle,
+	zoomFrameState,
+}: {
+	frameStyle: Required<VideoFrameStyle>;
+	zoomFrameState:
+		| {
+				tilt: number;
+				rotation: number;
+				perspective: number;
+				strength: number;
+		  }
+		| undefined;
+}): Required<VideoFrameStyle> {
+	if (!zoomFrameState) {
+		return frameStyle;
+	}
+
+	const tiltAmount = Math.abs(zoomFrameState.tilt) * zoomFrameState.strength;
+	const rotationAmount =
+		Math.min(Math.abs(zoomFrameState.rotation) / 25, 1) * zoomFrameState.strength;
+	const perspectiveAmount = zoomFrameState.perspective * zoomFrameState.strength;
+	const radiusScale = 1 - perspectiveAmount * 0.2 - tiltAmount * 0.12;
+	const shadowLift = 1 + perspectiveAmount * 0.45 + tiltAmount * 0.25;
+	const directionalOffsetX =
+		zoomFrameState.rotation * 0.18 + zoomFrameState.tilt * perspectiveAmount * 6;
+	const directionalOffsetY =
+		Math.sign(zoomFrameState.tilt || 1) *
+		(tiltAmount * (8 + perspectiveAmount * 14) + rotationAmount * 3);
+
+	return {
+		...frameStyle,
+		cornerRadius: clampNumber({
+			value: frameStyle.cornerRadius * radiusScale,
+			min: 0,
+			max: 100,
+		}),
+		shadowBlur: Math.max(0, frameStyle.shadowBlur * shadowLift),
+		shadowOffsetX: frameStyle.shadowOffsetX + directionalOffsetX,
+		shadowOffsetY: frameStyle.shadowOffsetY + directionalOffsetY,
+		shadowOpacity: clampNumber({
+			value:
+				frameStyle.shadowOpacity + perspectiveAmount * 18 + tiltAmount * 10,
+			min: 0,
+			max: 100,
+		}),
 	};
 }
 
@@ -311,7 +436,19 @@ export abstract class VisualNode<
 		const pixelHeight = Math.max(1, Math.round(scaledHeight));
 		const x = renderer.width / 2 + transform.position.x - scaledWidth / 2;
 		const y = renderer.height / 2 + transform.position.y - scaledHeight / 2;
-		const frameStyle = resolveFrameStyle(this.params.frameStyle);
+		const enabledEffects =
+			this.params.effects?.filter((effect) => effect.enabled) ?? [];
+		const baseFrameStyle = resolveFrameStyle(this.params.frameStyle);
+		const zoomFrameState = resolveZoomFrameStyleState({
+			effects: enabledEffects,
+			animations: this.params.animations,
+			localTime: animationLocalTime,
+			duration: this.params.duration,
+		});
+		const frameStyle = resolveTiltAwareFrameStyle({
+			frameStyle: baseFrameStyle,
+			zoomFrameState,
+		});
 		const hasRoundedCorners = frameStyle.cornerRadius > 0;
 		const hasShadow =
 			frameStyle.shadowBlur > 0 ||
@@ -332,9 +469,6 @@ export abstract class VisualNode<
 			renderer.context.rotate((transform.rotate * Math.PI) / 180);
 			renderer.context.translate(-centerX, -centerY);
 		}
-
-		const enabledEffects =
-			this.params.effects?.filter((effect) => effect.enabled) ?? [];
 
 		if (!hasRoundedCorners && !hasShadow && enabledEffects.length === 0) {
 			renderer.context.drawImage(source, x, y, scaledWidth, scaledHeight);

@@ -37,15 +37,46 @@ function applyZoomCpuEffect({
 		zoomTransition,
 	});
 	const scale = Math.max(1, 1 + (renderState.zoom - 1) * renderState.strength);
+	const tilt = renderState.tilt * renderState.strength;
+	const rotation = ((renderState.rotation * Math.PI) / 180) * renderState.strength;
+	const perspective = renderState.perspective * renderState.strength;
+	const tiltShear = tilt * (0.12 + perspective * 0.28);
+	const verticalCompression = 1 - Math.min(Math.abs(tilt) * (0.08 + perspective * 0.18), 0.24);
+	const scaleY = Math.max(0.0001, scale * verticalCompression);
 	const focusPixelX = width * renderState.focusX;
 	const focusPixelY = height * renderState.focusY;
-	const scaledWidth = width * scale;
-	const scaledHeight = height * scale;
-	const offsetX = focusPixelX - focusPixelX * scale;
-	const offsetY = focusPixelY - focusPixelY * scale;
+	const centerX = width / 2;
+	const centerY = height / 2;
+	const shearX = tiltShear * (width / height);
+	const cosRotation = Math.cos(rotation);
+	const sinRotation = Math.sin(rotation);
+	const matrixA = cosRotation;
+	const matrixB = sinRotation;
+	const matrixC = cosRotation * shearX - sinRotation * scaleY;
+	const matrixD = sinRotation * shearX + cosRotation * scaleY;
 
 	context.imageSmoothingEnabled = true;
-	context.drawImage(source, offsetX, offsetY, scaledWidth, scaledHeight);
+	context.save();
+	context.setTransform(
+		matrixA,
+		matrixB,
+		matrixC,
+		matrixD,
+		centerX - matrixA * centerX - matrixC * centerY,
+		centerY - matrixB * centerX - matrixD * centerY,
+	);
+	context.drawImage(
+		source,
+		focusPixelX - focusPixelX / scale,
+		focusPixelY - focusPixelY / scale,
+		width / scale,
+		height / scale,
+		0,
+		0,
+		width,
+		height,
+	);
+	context.restore();
 
 	if (renderState.keepFrameFixed) {
 		const baseCanvas = createOffscreenCanvas({ width, height });

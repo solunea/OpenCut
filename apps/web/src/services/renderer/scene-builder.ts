@@ -1,6 +1,7 @@
 import type { ZoomEffectTransition, ZoomTransitionState } from "@/types/effects";
 import type { EffectElement, TimelineElement, TimelineTrack } from "@/types/timeline";
 import type { MediaAsset } from "@/types/assets";
+import { resolveZoomTransitionState } from "@/lib/effects/definitions/zoom";
 import { RootNode } from "./nodes/root-node";
 import { VideoNode } from "./nodes/video-node";
 import { ImageNode } from "./nodes/image-node";
@@ -32,68 +33,6 @@ function getVisibleSortedElements({
 			if (a.startTime !== b.startTime) return a.startTime - b.startTime;
 			return a.id.localeCompare(b.id);
 		});
-}
-
-function resolveNumber({
-	value,
-	fallback,
-}: {
-	value: number | string | boolean | undefined;
-	fallback: number;
-}): number {
-	if (typeof value === "number") {
-		return value;
-	}
-	const parsed = Number.parseFloat(String(value));
-	return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function resolveBoolean({
-	value,
-	fallback,
-}: {
-	value: number | string | boolean | undefined;
-	fallback: boolean;
-}): boolean {
-	if (typeof value === "boolean") {
-		return value;
-	}
-
-	if (typeof value === "number") {
-		return value !== 0;
-	}
-
-	if (typeof value === "string") {
-		const normalized = value.trim().toLowerCase();
-		if (normalized === "true") {
-			return true;
-		}
-		if (normalized === "false") {
-			return false;
-		}
-	}
-
-	return fallback;
-}
-
-function clamp01(value: number): number {
-	return Math.min(Math.max(value, 0), 1);
-}
-
-function resolveZoomTransitionState({
-	element,
-}: {
-	element: EffectElement;
-}): ZoomTransitionState {
-	return {
-		zoom: Math.max(resolveNumber({ value: element.params.zoom, fallback: 1.35 }), 1),
-		focusX: clamp01(resolveNumber({ value: element.params.focusX, fallback: 50 }) / 100),
-		focusY: clamp01(resolveNumber({ value: element.params.focusY, fallback: 50 }) / 100),
-		keepFrameFixed: resolveBoolean({
-			value: element.params.keepFrameFixed,
-			fallback: true,
-		}),
-	};
 }
 
 function isAdjacentEffectBoundary({
@@ -133,7 +72,10 @@ function resolveAdjacentZoomState({
 		return undefined;
 	}
 
-	return resolveZoomTransitionState({ element: adjacentElement });
+	return resolveZoomTransitionState({
+		effectParams: adjacentElement.params,
+		boundary: isPrevious ? "end" : "start",
+	});
 }
 
 function resolveZoomTransition({

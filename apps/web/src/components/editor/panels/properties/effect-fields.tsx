@@ -67,10 +67,7 @@ export function EffectFields({
 		let hasInsertedZoomFocusField = false;
 
 		for (const param of definition.params) {
-			if (
-				effectType === ZOOM_EFFECT_TYPE &&
-				(param.key === "focusX" || param.key === "focusY")
-			) {
+			if (effectType === ZOOM_EFFECT_TYPE && (param.key === "focusX" || param.key === "focusY")) {
 				if (!hasInsertedZoomFocusField) {
 					items.push(
 						<ZoomFocusField
@@ -84,6 +81,22 @@ export function EffectFields({
 					);
 					hasInsertedZoomFocusField = true;
 				}
+				continue;
+			}
+
+			if (
+				effectType === ZOOM_EFFECT_TYPE &&
+				!Boolean(values.tiltEnabled) &&
+				(param.key === "rotation" || param.key === "perspective")
+			) {
+				continue;
+			}
+
+			if (
+				effectType === ZOOM_EFFECT_TYPE &&
+				!Boolean(values.tiltEnabled) &&
+				param.key === "tilt"
+			) {
 				continue;
 			}
 
@@ -148,6 +161,7 @@ function ZoomFocusField({
 			const rect = box.getBoundingClientRect();
 			const x = ((clientX - rect.left) / rect.width) * 100;
 			const y = ((clientY - rect.top) / rect.height) * 100;
+
 			previewFocus({ x, y });
 		},
 		[previewFocus],
@@ -256,8 +270,8 @@ function ZoomFocusField({
 						</Button>
 					)}
 				</div>
-				<div className="flex items-center gap-2">
-					<div className="flex flex-1 items-center gap-1">
+				<div className="grid grid-cols-2 gap-2">
+					<div className="flex items-center gap-1">
 						{zoomFocusControls && (
 							<KeyframeToggle
 								isActive={zoomFocusControls.focusXIsKeyframedAtTime}
@@ -275,7 +289,7 @@ function ZoomFocusField({
 							onBlur={focusXDraft.onBlur}
 						/>
 					</div>
-					<div className="flex flex-1 items-center gap-1">
+					<div className="flex items-center gap-1">
 						{zoomFocusControls && (
 							<KeyframeToggle
 								isActive={zoomFocusControls.focusYIsKeyframedAtTime}

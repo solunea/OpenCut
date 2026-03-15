@@ -83,6 +83,7 @@ function easeOutBack(value: number): number {
 }
 
 type ZoomMotionVariant = "soft" | "punchy";
+type ZoomTransitionBoundary = "start" | "end";
 
 type ZoomMotionProfile = {
 	entryStrength: (value: number) => number;
@@ -97,6 +98,25 @@ function resolveZoomMotionVariant({
 	effectParams: EffectParamValues;
 }): ZoomMotionVariant {
 	return effectParams.motion === "punchy" ? "punchy" : "soft";
+}
+
+function resolveZoomMode({
+	effectParams,
+}: {
+	effectParams: EffectParamValues;
+}): "zoom" | "tilt" {
+	return effectParams.mode === "tilt" ? "tilt" : "zoom";
+}
+
+function resolveTiltEnabled({
+	effectParams,
+}: {
+	effectParams: EffectParamValues;
+}): boolean {
+	if (typeof effectParams.tiltEnabled === "boolean") {
+		return effectParams.tiltEnabled;
+	}
+	return resolveZoomMode({ effectParams }) === "tilt";
 }
 
 function resolveZoomMotionProfile({
@@ -131,6 +151,33 @@ function lerp({
 	progress: number;
 }): number {
 	return leftValue + (rightValue - leftValue) * progress;
+}
+
+function resolveTiltValue({
+	effectParams,
+}: {
+	effectParams: EffectParamValues;
+}): number {
+	return Math.min(
+		Math.max(resolveNumber({ value: effectParams.tilt, fallback: 18 }), -100),
+		100,
+	) / 100;
+}
+
+function resolveTiltRotation({
+	effectParams,
+}: {
+	effectParams: EffectParamValues;
+}): number {
+	return resolveNumber({ value: effectParams.rotation, fallback: 4 });
+}
+
+function resolveTiltPerspective({
+	effectParams,
+}: {
+	effectParams: EffectParamValues;
+}): number {
+	return clamp01(resolveNumber({ value: effectParams.perspective, fallback: 55 }) / 100);
 }
 
 function resolveConfiguredEaseDurations({
@@ -203,17 +250,31 @@ function resolveActiveEaseDurations({
 
 export function resolveZoomTransitionState({
 	effectParams,
+	boundary,
+	travelProgress,
 }: {
 	effectParams: EffectParamValues;
+	boundary?: ZoomTransitionBoundary;
+	travelProgress?: number;
 }): ZoomTransitionState {
+	const keepFrameFixed = resolveBoolean({
+		value: effectParams.keepFrameFixed,
+		fallback: true,
+	});
+	const _boundary = boundary;
+	const _travelProgress = travelProgress;
+	void _boundary;
+	void _travelProgress;
+	const tiltEnabled = resolveTiltEnabled({ effectParams });
+
 	return {
 		zoom: Math.max(resolveNumber({ value: effectParams.zoom, fallback: 1.35 }), 1),
 		focusX: clamp01(resolveNumber({ value: effectParams.focusX, fallback: 50 }) / 100),
 		focusY: clamp01(resolveNumber({ value: effectParams.focusY, fallback: 50 }) / 100),
-		keepFrameFixed: resolveBoolean({
-			value: effectParams.keepFrameFixed,
-			fallback: true,
-		}),
+		keepFrameFixed,
+		tilt: tiltEnabled ? resolveTiltValue({ effectParams }) : 0,
+		rotation: tiltEnabled ? resolveTiltRotation({ effectParams }) : 0,
+		perspective: tiltEnabled ? resolveTiltPerspective({ effectParams }) : 0,
 	};
 }
 
@@ -228,9 +289,13 @@ export function resolveZoomRenderState({
 	duration?: number;
 	zoomTransition?: ZoomEffectTransition;
 }): ZoomTransitionState & { strength: number } {
-	const targetState = resolveZoomTransitionState({ effectParams });
 	const motionProfile = resolveZoomMotionProfile({
 		variant: resolveZoomMotionVariant({ effectParams }),
+	});
+	const clampedProgress = clamp01(progress);
+	const targetState = resolveZoomTransitionState({
+		effectParams,
+		travelProgress: motionProfile.focusTransition(clampedProgress),
 	});
 	const previousState = zoomTransition?.previous;
 	const nextState = zoomTransition?.next;
@@ -239,7 +304,7 @@ export function resolveZoomRenderState({
 	const hasNext = nextState?.keepFrameFixed === targetState.keepFrameFixed;
 	const resolvedDuration =
 		typeof duration === "number" && duration > 0 ? duration : 1;
-	const localTime = clamp01(progress) * resolvedDuration;
+	const localTime = clampedProgress * resolvedDuration;
 	const configuredEases = resolveConfiguredEaseDurations({
 		effectParams,
 		duration: resolvedDuration,
@@ -272,6 +337,21 @@ export function resolveZoomRenderState({
 				progress: focusTransitionProgress,
 			}),
 			keepFrameFixed: targetState.keepFrameFixed,
+			tilt: lerp({
+				leftValue: previousState.tilt,
+				rightValue: targetState.tilt,
+				progress: focusTransitionProgress,
+			}),
+			rotation: lerp({
+				leftValue: previousState.rotation,
+				rightValue: targetState.rotation,
+				progress: focusTransitionProgress,
+			}),
+			perspective: lerp({
+				leftValue: previousState.perspective,
+				rightValue: targetState.perspective,
+				progress: focusTransitionProgress,
+			}),
 			strength: 1,
 		};
 	}
@@ -302,7 +382,7 @@ export function resolveZoomRenderState({
 export const zoomEffectDefinition: EffectDefinition = {
 	type: "zoom",
 	name: "Zoom",
-	keywords: ["zoom", "focus", "punch in", "shots"],
+	keywords: ["zoom", "focus", "punch in", "shots", "tilt"],
 	params: [
 		{
 			key: "zoom",
@@ -327,6 +407,39 @@ export const zoomEffectDefinition: EffectDefinition = {
 			label: "Focus Y",
 			type: "number",
 			default: 50,
+			min: 0,
+			max: 100,
+			step: 1,
+		},
+		{
+			key: "tiltEnabled",
+			label: "Tilt",
+			type: "boolean",
+			default: false,
+		},
+		{
+			key: "tilt",
+			label: "Tilt Amount",
+			type: "number",
+			default: 18,
+			min: -100,
+			max: 100,
+			step: 1,
+		},
+		{
+			key: "rotation",
+			label: "Rotation",
+			type: "number",
+			default: 4,
+			min: -25,
+			max: 25,
+			step: 0.1,
+		},
+		{
+			key: "perspective",
+			label: "Perspective",
+			type: "number",
+			default: 55,
 			min: 0,
 			max: 100,
 			step: 1,
@@ -373,6 +486,9 @@ export const zoomEffectDefinition: EffectDefinition = {
 					return {
 						u_focus: [renderState.focusX, renderState.focusY],
 						u_zoom: renderState.zoom,
+						u_tilt: renderState.tilt,
+						u_rotation: renderState.rotation,
+						u_perspective: renderState.perspective,
 						u_strength: renderState.strength,
 						u_keepFrameFixed: renderState.keepFrameFixed ? 1 : 0,
 					};
