@@ -43,7 +43,7 @@ async function getTrackableTabs({ controllerTabId, controllerWindowId }) {
 async function injectTrackerIntoTab({ tabId }) {
 	try {
 		await chrome.scripting.executeScript({
-			target: { tabId },
+			target: { tabId, allFrames: true },
 			files: ["content.js"],
 		});
 		return true;
