@@ -3,6 +3,7 @@
 import { toast } from "sonner";
 import { applyCursorTrackingToZoomEffect } from "@/lib/effects/cursor-follow";
 import { parseRecordedCursorFile } from "@/lib/media/recorded-cursor";
+import { buildReplaceMediaUpdates } from "@/lib/timeline/replace-media";
 import { buildTransitionApplication } from "@/lib/transitions";
 import { useActionHandler } from "@/hooks/actions/use-action-handler";
 import { useKeyframeSelection } from "../timeline/element/use-keyframe-selection";
@@ -10,6 +11,7 @@ import { useElementSelection } from "../timeline/element/use-element-selection";
 import { useEditor } from "../use-editor";
 import { getElementsAtTime } from "@/lib/timeline";
 import { useTimelineStore } from "@/stores/timeline-store";
+import { useAssetsPanelStore } from "@/stores/assets-panel-store";
 import { downloadBlob } from "@/utils/browser";
 
 export function useEditorActions() {
@@ -22,6 +24,9 @@ export function useEditorActions() {
 	const toggleSnapping = useTimelineStore((s) => s.toggleSnapping);
 	const rippleEditingEnabled = useTimelineStore((s) => s.rippleEditingEnabled);
 	const toggleRippleEditing = useTimelineStore((s) => s.toggleRippleEditing);
+	const clearReplaceMediaRequest = useAssetsPanelStore(
+		(s) => s.clearReplaceMediaRequest,
+	);
 
 	useActionHandler(
 		"toggle-play",
@@ -554,6 +559,58 @@ error instanceof Error ? error.message : "Please try again",
 },
 undefined,
 );
+
+	useActionHandler(
+		"replace-media",
+		(args) => {
+			const [target] = editor.timeline.getElementsWithTracks({
+				elements: [{ trackId: args.trackId, elementId: args.elementId }],
+			});
+			if (!target) {
+				toast.error("Failed to replace media", {
+					description: "The selected clip could not be found.",
+				});
+				return;
+			}
+
+			const mediaAsset = editor
+				.media
+				.getAssets()
+				.find((asset) => asset.id === args.mediaId);
+			if (!mediaAsset) {
+				toast.error("Failed to replace media", {
+					description: "The selected media asset could not be found.",
+				});
+				return;
+			}
+
+			try {
+				const updates = buildReplaceMediaUpdates({
+					element: target.element,
+					mediaAsset,
+				});
+				editor.timeline.updateElements({
+					updates: [
+						{
+							trackId: target.track.id,
+							elementId: target.element.id,
+							updates,
+						},
+					],
+				});
+				clearReplaceMediaRequest();
+				toast.success("Media replaced", {
+					description: "The clip source has been updated.",
+				});
+			} catch (error) {
+				toast.error("Failed to replace media", {
+					description:
+						error instanceof Error ? error.message : "Please try again",
+				});
+			}
+		},
+		undefined,
+	);
 
 
 	useActionHandler(

@@ -1,4 +1,4 @@
-import type { ElementType } from "react";
+import type { ElementType as ReactElementType } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
@@ -14,6 +14,7 @@ import {
 	ColorsIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import type { ReplaceMediaTarget } from "@/lib/timeline/replace-media";
 
 export const TAB_KEYS = [
 	"media",
@@ -79,7 +80,7 @@ export const tabs = {
 	},
 } satisfies Record<
 	Tab,
-	{ icon: ElementType<{ className?: string }>; label: string }
+	{ icon: ReactElementType<{ className?: string }>; label: string }
 >;
 
 export type MediaViewMode = "grid" | "list";
@@ -92,6 +93,9 @@ interface AssetsPanelStore {
 	highlightMediaId: string | null;
 	requestRevealMedia: (mediaId: string) => void;
 	clearHighlight: () => void;
+	replaceMediaTarget: ReplaceMediaTarget | null;
+	requestReplaceMedia: (target: ReplaceMediaTarget) => void;
+	clearReplaceMediaRequest: () => void;
 
 	/* Media */
 	mediaViewMode: MediaViewMode;
@@ -110,6 +114,15 @@ export const useAssetsPanelStore = create<AssetsPanelStore>()(
 			requestRevealMedia: (mediaId) =>
 				set({ activeTab: "media", highlightMediaId: mediaId }),
 			clearHighlight: () => set({ highlightMediaId: null }),
+			replaceMediaTarget: null,
+			requestReplaceMedia: (target) =>
+				set({
+					activeTab: "media",
+					highlightMediaId: target.currentMediaId ?? null,
+					replaceMediaTarget: target,
+				}),
+			clearReplaceMediaRequest: () =>
+				set({ replaceMediaTarget: null, highlightMediaId: null }),
 			mediaViewMode: "grid",
 			setMediaViewMode: (mode) => set({ mediaViewMode: mode }),
 			mediaSortBy: "name",

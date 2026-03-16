@@ -19,6 +19,7 @@ import { AddMediaAssetCommand } from "@/lib/commands/media";
 import { AddTrackCommand, InsertElementCommand } from "@/lib/commands/timeline";
 import { BatchCommand } from "@/lib/commands";
 import { computeDropTarget } from "@/lib/timeline/drop-utils";
+import { invokeAction } from "@/lib/actions";
 import { getDragData, hasDragData } from "@/lib/drag-data";
 import type { TrackType, DropTarget, ElementType } from "@/types/timeline";
 import type {
@@ -282,7 +283,15 @@ export function useTimelineDragDrop({
 	const executeMediaDrop = useCallback(
 		({ target, dragData }: { target: DropTarget; dragData: MediaDragData }) => {
 			if (target.targetElement) {
-				toast.info("Replace media source is coming soon!");
+				invokeAction(
+					"replace-media",
+					{
+						trackId: target.targetElement.trackId,
+						elementId: target.targetElement.elementId,
+						mediaId: dragData.id,
+					},
+					"mouseclick",
+				);
 				return;
 			}
 

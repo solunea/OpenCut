@@ -18,6 +18,11 @@ export type TActionArgsMap = {
 		elementId: string;
 		effectId: string;
 	};
+	"replace-media": {
+		trackId: string;
+		elementId: string;
+		mediaId: string;
+	};
 	"export-project": { id: string };
 	"import-project": { file: File; openInEditor?: boolean };
 	"attach-cursor-tracking": { mediaId: string; file: File };

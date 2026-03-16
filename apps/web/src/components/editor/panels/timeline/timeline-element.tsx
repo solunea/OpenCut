@@ -205,7 +205,7 @@ export function TimelineElement({
 }: TimelineElementProps) {
 	const editor = useEditor({ subscribeTo: ["media"] });
 	const { selectedElements } = useElementSelection();
-	const { requestRevealMedia } = useAssetsPanelStore();
+	const { requestRevealMedia, requestReplaceMedia } = useAssetsPanelStore();
 
 	let mediaAsset: MediaAsset | null = null;
 
@@ -300,6 +300,17 @@ export function TimelineElement({
 			requestRevealMedia(element.mediaId);
 		}
 	};
+	const handleReplaceMedia = ({ event }: { event: React.MouseEvent }) => {
+		event.stopPropagation();
+		if (hasMediaId(element)) {
+			requestReplaceMedia({
+				trackId: track.id,
+				elementId: element.id,
+				elementType: element.type,
+				currentMediaId: element.mediaId,
+			});
+		}
+	};
 
 	const isMuted = canElementHaveAudio(element) && element.muted === true;
 
@@ -388,7 +399,9 @@ export function TimelineElement({
 						</ContextMenuItem>
 						<ContextMenuItem
 							icon={<HugeiconsIcon icon={Exchange01Icon} />}
-							disabled
+							onClick={(event: React.MouseEvent) =>
+								handleReplaceMedia({ event })
+							}
 						>
 							Replace media
 						</ContextMenuItem>

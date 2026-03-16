@@ -169,6 +169,15 @@ export const ACTIONS = {
 		category: "controls",
 		args: { mediaId: "string", file: "File" },
 	},
+	"replace-media": {
+		description: "Replace the source media of an existing timeline clip",
+		category: "editing",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			mediaId: "string",
+		},
+	},
 	undo: {
 		description: "Undo",
 		category: "history",

@@ -43,6 +43,10 @@ import { useRevealItem } from "@/hooks/use-reveal-item";
 import { invokeAction } from "@/lib/actions";
 import { processMediaAssets } from "@/lib/media/processing";
 import { buildElementFromMedia, hasMediaId } from "@/lib/timeline/element-utils";
+import {
+	canReplaceTimelineElementWithMediaType,
+	type ReplaceMediaTarget,
+} from "@/lib/timeline/replace-media";
 import { TabCaptureDialog } from "@/components/editor/panels/assets/tab-capture-dialog";
 import {
 	type MediaSortKey,
@@ -80,6 +84,8 @@ export function MediaView() {
 		mediaSortBy,
 		mediaSortOrder,
 		setMediaSort,
+		replaceMediaTarget,
+		clearReplaceMediaRequest,
 	} = useAssetsPanelStore();
 	const { highlightedId, registerElement } = useRevealItem(
 		highlightMediaId,
@@ -235,6 +241,23 @@ export function MediaView() {
 		}
 	};
 
+	const handleReplaceMedia = ({ mediaId }: { mediaId: string }) => {
+		if (!replaceMediaTarget) {
+			toast.error("No clip selected for replacement");
+			return;
+		}
+
+		invokeAction(
+			"replace-media",
+			{
+				trackId: replaceMediaTarget.trackId,
+				elementId: replaceMediaTarget.elementId,
+				mediaId,
+			},
+			"mouseclick",
+		);
+	};
+
 	const filteredMediaItems = useMemo(() => {
 		const filtered = mediaFiles.filter((item) => !item.ephemeral);
 
@@ -299,6 +322,14 @@ export function MediaView() {
 				className={cn(isDragOver && "bg-accent/30")}
 				{...dragProps}
 			>
+				{replaceMediaTarget ? (
+					<div className="bg-accent/60 mb-3 flex items-center justify-between rounded-md px-3 py-2 text-sm">
+						<span>Choose a compatible media asset to replace the selected clip.</span>
+						<Button variant="ghost" size="sm" onClick={clearReplaceMediaRequest}>
+							Cancel
+						</Button>
+					</div>
+				) : null}
 				{isDragOver || filteredMediaItems.length === 0 ? (
 					<MediaDragOverlay
 						isVisible={true}
@@ -312,6 +343,8 @@ export function MediaView() {
 						mode={mediaViewMode}
 						onRemove={handleRemove}
 						onRename={setAssetToRename}
+						replaceMediaTarget={replaceMediaTarget}
+						onReplaceMedia={handleReplaceMedia}
 						highlightedId={highlightedId}
 						registerElement={registerElement}
 					/>
@@ -337,12 +370,16 @@ function MediaAssetDraggable({
 	isHighlighted,
 	variant,
 	isRounded,
+	replaceMediaTarget,
+	onReplaceMedia,
 }: {
 	item: MediaAsset;
 	preview: React.ReactNode;
 	isHighlighted: boolean;
 	variant: "card" | "compact";
 	isRounded?: boolean;
+	replaceMediaTarget?: ReplaceMediaTarget | null;
+	onReplaceMedia?: ({ mediaId }: { mediaId: string }) => void;
 }) {
 	const editor = useEditor();
 
@@ -368,6 +405,14 @@ function MediaAssetDraggable({
 		});
 	};
 
+	const canReplaceSelectedClip =
+		replaceMediaTarget &&
+		replaceMediaTarget.currentMediaId !== item.id &&
+		canReplaceTimelineElementWithMediaType({
+			elementType: replaceMediaTarget.elementType,
+			mediaType: item.type,
+		});
+
 	return (
 		<DraggableItem
 			name={item.name}
@@ -377,13 +422,18 @@ function MediaAssetDraggable({
 				type: "media",
 				mediaType: item.type,
 				name: item.name,
-				...(item.type !== "audio" && {
-					targetElementTypes: ["video", "image"] as const,
-				}),
+				targetElementTypes:
+					item.type === "audio"
+						? (["audio"] as const)
+						: item.type === "video"
+							? (["video"] as const)
+							: (["image"] as const),
 			}}
 			shouldShowPlusOnDrag={false}
 			onAddToTimeline={({ currentTime }) =>
-				addElementAtTime({ asset: item, startTime: currentTime })
+				canReplaceSelectedClip && onReplaceMedia
+					? onReplaceMedia({ mediaId: item.id })
+					: addElementAtTime({ asset: item, startTime: currentTime })
 			}
 			variant={variant}
 			isRounded={isRounded}
@@ -397,13 +447,24 @@ function MediaItemWithContextMenu({
 	children,
 	onRemove,
 	onRename,
+	replaceMediaTarget,
+	onReplaceMedia,
 }: {
 	item: MediaAsset;
 	children: React.ReactNode;
 	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
 	onRename: (asset: MediaAsset) => void;
+	replaceMediaTarget?: ReplaceMediaTarget | null;
+	onReplaceMedia?: ({ mediaId }: { mediaId: string }) => void;
 }) {
 	const hasReadyCursorTracking = item.cursorTracking?.status === "ready";
+	const canReplaceSelectedClip =
+		replaceMediaTarget &&
+		replaceMediaTarget.currentMediaId !== item.id &&
+		canReplaceTimelineElementWithMediaType({
+			elementType: replaceMediaTarget.elementType,
+			mediaType: item.type,
+		});
 	const handleAttachCursorTracking = () => {
 		const input = document.createElement("input");
 		input.type = "file";
@@ -424,6 +485,14 @@ function MediaItemWithContextMenu({
 			<ContextMenuTrigger>{children}</ContextMenuTrigger>
 			<ContextMenuContent>
 				<ContextMenuItem onClick={() => onRename(item)}>Rename</ContextMenuItem>
+				{replaceMediaTarget ? (
+					<ContextMenuItem
+						disabled={!canReplaceSelectedClip}
+						onClick={() => onReplaceMedia?.({ mediaId: item.id })}
+					>
+						Replace selected clip
+					</ContextMenuItem>
+				) : null}
 				{item.type === "video" ? (
 					<ContextMenuItem onClick={handleAttachCursorTracking}>
 						{hasReadyCursorTracking
@@ -448,6 +517,8 @@ function MediaItemList({
 	mode,
 	onRemove,
 	onRename,
+	replaceMediaTarget,
+	onReplaceMedia,
 	highlightedId,
 	registerElement,
 }: {
@@ -455,6 +526,8 @@ function MediaItemList({
 	mode: MediaViewMode;
 	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
 	onRename: (asset: MediaAsset) => void;
+	replaceMediaTarget?: ReplaceMediaTarget | null;
+	onReplaceMedia?: ({ mediaId }: { mediaId: string }) => void;
 	highlightedId: string | null;
 	registerElement: (id: string, element: HTMLElement | null) => void;
 }) {
@@ -469,7 +542,13 @@ function MediaItemList({
 		>
 			{items.map((item) => (
 				<div key={item.id} ref={(element) => registerElement(item.id, element)}>
-					<MediaItemWithContextMenu item={item} onRemove={onRemove} onRename={onRename}>
+					<MediaItemWithContextMenu
+						item={item}
+						onRemove={onRemove}
+						onRename={onRename}
+						replaceMediaTarget={replaceMediaTarget}
+						onReplaceMedia={onReplaceMedia}
+					>
 						<MediaAssetDraggable
 							item={item}
 							preview={
@@ -481,6 +560,8 @@ function MediaItemList({
 							variant={isGrid ? "card" : "compact"}
 							isRounded={isGrid ? false : undefined}
 							isHighlighted={highlightedId === item.id}
+							replaceMediaTarget={replaceMediaTarget}
+							onReplaceMedia={onReplaceMedia}
 						/>
 					</MediaItemWithContextMenu>
 				</div>

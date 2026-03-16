@@ -9,7 +9,7 @@ interface BaseDragData {
 export interface MediaDragData extends BaseDragData {
 	type: "media";
 	mediaType: MediaType;
-	targetElementTypes?: ("video" | "image")[];
+	targetElementTypes?: ("audio" | "video" | "image")[];
 }
 
 export interface TextDragData extends BaseDragData {
