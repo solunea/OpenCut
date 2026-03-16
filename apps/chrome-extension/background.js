@@ -54,11 +54,15 @@ async function injectTrackerIntoTab({ tabId }) {
 
 async function sendTabMessage({ tabId, type, payload, allowInject = false }) {
 	try {
-		return await chrome.tabs.sendMessage(tabId, {
-			namespace: MESSAGE_NAMESPACE,
-			type,
-			payload,
-		});
+		return await chrome.tabs.sendMessage(
+			tabId,
+			{
+				namespace: MESSAGE_NAMESPACE,
+				type,
+				payload,
+			},
+			{ frameId: 0 },
+		);
 	} catch {
 		if (!allowInject) {
 			return null;
@@ -68,11 +72,15 @@ async function sendTabMessage({ tabId, type, payload, allowInject = false }) {
 			return null;
 		}
 		try {
-			return await chrome.tabs.sendMessage(tabId, {
-				namespace: MESSAGE_NAMESPACE,
-				type,
-				payload,
-			});
+			return await chrome.tabs.sendMessage(
+				tabId,
+				{
+					namespace: MESSAGE_NAMESPACE,
+					type,
+					payload,
+				},
+				{ frameId: 0 },
+			);
 		} catch {
 			return null;
 		}

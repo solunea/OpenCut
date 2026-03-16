@@ -22,10 +22,14 @@ async function getActiveTab() {
 
 async function sendMessage(type) {
 	const tab = await getActiveTab();
-	return await chrome.tabs.sendMessage(tab.id, {
-		namespace: MESSAGE_NAMESPACE,
-		type,
-	});
+	return await chrome.tabs.sendMessage(
+		tab.id,
+		{
+			namespace: MESSAGE_NAMESPACE,
+			type,
+		},
+		{ frameId: 0 },
+	);
 }
 
 function buildFilename(title) {
