@@ -191,7 +191,6 @@ function resolveInterpolatedPosition({
 	const progress = clamp((time - leftEvent.time) / duration, 0, 1);
 	const snapDistanceThreshold = lerp(0.0012, 0.0045, 1 - smoothness);
 	const snapVelocityThreshold = lerp(0.12, 0.65, 1 - smoothness);
-	const holdEdgePortion = lerp(0.08, 0.3, 1 - smoothness);
 
 	if (
 		distance <= snapDistanceThreshold ||
@@ -204,26 +203,9 @@ function resolveInterpolatedPosition({
 		};
 	}
 
-	const heldProgress = clamp(
-		inverseLerp(progress, holdEdgePortion, 1 - holdEdgePortion),
-		0,
-		1,
-	);
-	const smoothingStrength = clamp(
-		inverseLerp(velocity, snapVelocityThreshold, 2.4),
-		0,
-		1,
-	);
-	const smoothingMin = lerp(0.9, CURSOR_SMOOTHING_MIN, smoothness);
-	const smoothingMax = lerp(1, CURSOR_SMOOTHING_MAX, smoothness);
-	const smoothedProgress = lerp(
-		heldProgress,
-		progress,
-		lerp(smoothingMin, smoothingMax, smoothingStrength),
-	);
 	return {
-		x: lerp(leftEvent.normalizedX, rightEvent.normalizedX, smoothedProgress),
-		y: lerp(leftEvent.normalizedY, rightEvent.normalizedY, smoothedProgress),
+		x: lerp(leftEvent.normalizedX, rightEvent.normalizedX, progress),
+		y: lerp(leftEvent.normalizedY, rightEvent.normalizedY, progress),
 	};
 }
 
@@ -875,7 +857,7 @@ function drawCustomCursorDebugOverlay({
 		context,
 		position: rawTrackedPosition,
 		color: "rgba(34, 211, 238, 0.98)",
-		label: "TRACKED",
+		label: "RAW",
 	});
 	drawDebugMarker({
 		context,
@@ -1653,12 +1635,16 @@ export function applyCustomCursorEffect({
 		smoothness,
 	});
 	const rawTrackedPosition = {
+		x: currentEvent.normalizedX * width,
+		y: currentEvent.normalizedY * height,
+	};
+	const interpolatedTrackedPosition = {
 		x: position.x * width,
 		y: position.y * height,
 	};
 	const transformedPosition = mapCursorPointThroughZoomEffects({
-		x: rawTrackedPosition.x,
-		y: rawTrackedPosition.y,
+		x: interpolatedTrackedPosition.x,
+		y: interpolatedTrackedPosition.y,
 		width,
 		height,
 		zoomEffects,
