@@ -3,6 +3,7 @@ import { createOffscreenCanvas } from "../canvas-utils";
 import {
 	applyCustomCursorEffect,
 	type AppliedZoomEffect,
+	type TemporalCleanupFrame,
 } from "../custom-cursor-effect";
 import { BaseNode } from "./base-node";
 import type { Effect } from "@/types/effects";
@@ -424,12 +425,14 @@ export abstract class VisualNode<
 		sourceWidth,
 		sourceHeight,
 		timelineTime,
+		temporalCleanupFrames,
 	}: {
 		renderer: CanvasRenderer;
 		source: CanvasImageSource;
 		sourceWidth: number;
 		sourceHeight: number;
 		timelineTime: number;
+		temporalCleanupFrames?: TemporalCleanupFrame[];
 	}): void {
 		renderer.context.save();
 
@@ -565,6 +568,7 @@ export abstract class VisualNode<
 					effectParams: resolvedParams,
 					recordedCursor: this.params.recordedCursor,
 					zoomEffects: appliedZoomEffects,
+					temporalCleanupFrames,
 				});
 				continue;
 			}

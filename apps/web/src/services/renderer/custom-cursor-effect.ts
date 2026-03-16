@@ -9,6 +9,11 @@ export interface AppliedZoomEffect {
 	duration?: number;
 }
 
+export interface TemporalCleanupFrame {
+	source: CanvasImageSource;
+	sourceTime: number;
+}
+
 type RenderableContext =
 	| CanvasRenderingContext2D
 	| OffscreenCanvasRenderingContext2D;
@@ -710,6 +715,12 @@ interface CleanupSample {
 	distance: number;
 }
 
+interface PreparedTemporalCleanupSample {
+	data: Uint8ClampedArray;
+	maskAlpha: Uint8ClampedArray;
+	timeDistance: number;
+}
+
 function mapCursorPointThroughZoomEffects({
 	x,
 	y,
@@ -1040,18 +1051,231 @@ function findDirectionalCleanupSample({
 	return null;
 }
 
+function projectCleanupMaskToRegion({
+	mask,
+	region,
+}: {
+	mask: CursorCleanupMask | null;
+	region: CursorCleanupMask;
+}): Uint8ClampedArray {
+	const projectedAlpha = new Uint8ClampedArray(region.width * region.height);
+	if (!mask) {
+		return projectedAlpha;
+	}
+
+	const overlapMinX = Math.max(mask.minX, region.minX);
+	const overlapMinY = Math.max(mask.minY, region.minY);
+	const overlapMaxX = Math.min(mask.minX + mask.width, region.minX + region.width);
+	const overlapMaxY = Math.min(mask.minY + mask.height, region.minY + region.height);
+
+	if (overlapMinX >= overlapMaxX || overlapMinY >= overlapMaxY) {
+		return projectedAlpha;
+	}
+
+	for (let y = overlapMinY; y < overlapMaxY; y += 1) {
+		const sourceRowOffset = (y - mask.minY) * mask.width;
+		const targetRowOffset = (y - region.minY) * region.width;
+		for (let x = overlapMinX; x < overlapMaxX; x += 1) {
+			projectedAlpha[targetRowOffset + (x - region.minX)] =
+				mask.alpha[sourceRowOffset + (x - mask.minX)];
+		}
+	}
+
+	return projectedAlpha;
+}
+
+function readSourceRegionData({
+	source,
+	width,
+	height,
+	region,
+}: {
+	source: CanvasImageSource;
+	width: number;
+	height: number;
+	region: CursorCleanupMask;
+}): Uint8ClampedArray | null {
+	const regionCanvas = createOffscreenCanvas({
+		width: region.width,
+		height: region.height,
+	});
+	const regionContext = regionCanvas.getContext("2d") as RenderableContext | null;
+	if (!regionContext) {
+		return null;
+	}
+
+	regionContext.drawImage(source, -region.minX, -region.minY, width, height);
+	return regionContext.getImageData(0, 0, region.width, region.height).data;
+}
+
+function prepareTemporalCleanupSamples({
+	temporalCleanupFrames,
+	sourceTime,
+	events,
+	smoothness,
+	width,
+	height,
+	zoomEffects,
+	size,
+	cleanupSize,
+	cleanupMask,
+}: {
+	temporalCleanupFrames: TemporalCleanupFrame[];
+	sourceTime: number;
+	events: RecordedCursorEvent[];
+	smoothness: number;
+	width: number;
+	height: number;
+	zoomEffects: AppliedZoomEffect[];
+	size: number;
+	cleanupSize: number;
+	cleanupMask: CursorCleanupMask;
+}): PreparedTemporalCleanupSample[] {
+	return temporalCleanupFrames
+		.map((frame) => ({
+			...frame,
+			timeDistance: Math.abs(frame.sourceTime - sourceTime),
+		}))
+		.filter(
+			(frame) =>
+				Number.isFinite(frame.timeDistance) &&
+				frame.timeDistance > 0.0005 &&
+				frame.timeDistance <= 0.12,
+		)
+		.sort((left, right) => left.timeDistance - right.timeDistance)
+		.slice(0, 2)
+		.map((frame) => {
+			const sampleIndex = findEventIndexAtOrBefore({
+				events,
+				time: frame.sourceTime,
+			});
+			const sampleEvent = events[Math.max(sampleIndex, 0)] ?? events[0];
+			if (!sampleEvent) {
+				return null;
+			}
+
+			const currentPosition = resolveCursorPixelPositionAtTime({
+				events,
+				time: frame.sourceTime,
+				smoothness,
+				width,
+				height,
+				zoomEffects,
+			});
+			const sampleMask = buildCursorCleanupMask({
+				positions: resolveCursorCleanupTrail({
+					events,
+					time: frame.sourceTime,
+					smoothness,
+					width,
+					height,
+					zoomEffects,
+					currentPosition,
+					size,
+					cleanupSize,
+				}),
+				kind: normalizeCursorKind(sampleEvent.cursor),
+				size,
+				cleanupSize,
+				width,
+				height,
+			});
+			const data = readSourceRegionData({
+				source: frame.source,
+				width,
+				height,
+				region: cleanupMask,
+			});
+			if (!data) {
+				return null;
+			}
+
+			return {
+				data,
+				maskAlpha: projectCleanupMaskToRegion({
+					mask: sampleMask,
+					region: cleanupMask,
+				}),
+				timeDistance: frame.timeDistance,
+			};
+		})
+		.filter(
+			(sample): sample is PreparedTemporalCleanupSample => sample !== null,
+		);
+}
+
+function resolveTemporalCleanupColor({
+	maskOffset,
+	pixelOffset,
+	temporalSamples,
+}: {
+	maskOffset: number;
+	pixelOffset: number;
+	temporalSamples: PreparedTemporalCleanupSample[];
+}):
+	| {
+			red: number;
+			green: number;
+			blue: number;
+			alpha: number;
+			weight: number;
+	  }
+	| null {
+	let red = 0;
+	let green = 0;
+	let blue = 0;
+	let alpha = 0;
+	let totalWeight = 0;
+
+	for (const sample of temporalSamples) {
+		const cursorMaskStrength = sample.maskAlpha[maskOffset] / 255;
+		if (cursorMaskStrength > 0.08) {
+			continue;
+		}
+
+		const sampleAlpha = sample.data[pixelOffset + 3] / 255;
+		const weight =
+			(1 - cursorMaskStrength) *
+			(0.35 + sampleAlpha * 0.65) /
+			(1 + sample.timeDistance * 36);
+		if (weight <= 0.0001) {
+			continue;
+		}
+
+		red += sample.data[pixelOffset] * weight;
+		green += sample.data[pixelOffset + 1] * weight;
+		blue += sample.data[pixelOffset + 2] * weight;
+		alpha += sample.data[pixelOffset + 3] * weight;
+		totalWeight += weight;
+	}
+
+	if (totalWeight <= 0.0001) {
+		return null;
+	}
+
+	return {
+		red: red / totalWeight,
+		green: green / totalWeight,
+		blue: blue / totalWeight,
+		alpha: alpha / totalWeight,
+		weight: totalWeight,
+	};
+}
+
 function applyNativeCursorCleanup({
 	context,
 	source,
 	width,
 	height,
 	mask,
+	temporalSamples,
 }: {
 	context: RenderableContext;
 	source: CanvasImageSource;
 	width: number;
 	height: number;
 	mask: CursorCleanupMask;
+	temporalSamples: PreparedTemporalCleanupSample[];
 }): void {
 	const cleanupCanvas = createOffscreenCanvas({
 		width: mask.width,
@@ -1090,69 +1314,89 @@ function applyNativeCursorCleanup({
 				continue;
 			}
 
+			const pixelOffset = maskOffset * 4;
 			let red = 0;
 			let green = 0;
 			let blue = 0;
 			let alpha = 0;
 			let totalWeight = 0;
+			const temporalColor =
+				temporalSamples.length > 0
+					? resolveTemporalCleanupColor({
+							maskOffset,
+							pixelOffset,
+							temporalSamples,
+						})
+					: null;
 
-			for (const direction of pairDirections) {
-				const leftSample = findDirectionalCleanupSample({
-					startX: x,
-					startY: y,
-					directionX: direction.x,
-					directionY: direction.y,
-					maskAlpha: mask.alpha,
-					sourceData,
-					regionWidth: mask.width,
-					regionHeight: mask.height,
-					maxDistance,
-				});
-				const rightSample = findDirectionalCleanupSample({
-					startX: x,
-					startY: y,
-					directionX: -direction.x,
-					directionY: -direction.y,
-					maskAlpha: mask.alpha,
-					sourceData,
-					regionWidth: mask.width,
-					regionHeight: mask.height,
-					maxDistance,
-				});
-				if (!leftSample || !rightSample) {
-					continue;
-				}
-
-				const colorDifference = Math.hypot(
-					leftSample.red - rightSample.red,
-					leftSample.green - rightSample.green,
-					leftSample.blue - rightSample.blue,
-				);
-				const similarity = 1 - clamp(colorDifference / 441.6729559300637, 0, 1);
-				const balance =
-					1 -
-					clamp(
-						Math.abs(leftSample.distance - rightSample.distance) /
-							Math.max(1, leftSample.distance + rightSample.distance),
-						0,
-						1,
-					);
-				const weight =
-					(0.15 + similarity * 0.85) *
-					(0.35 + balance * 0.65) /
-					Math.max(1, leftSample.distance + rightSample.distance);
-				if (weight <= 0.0001) {
-					continue;
-				}
-
-				red += ((leftSample.red + rightSample.red) / 2) * weight;
-				green += ((leftSample.green + rightSample.green) / 2) * weight;
-				blue += ((leftSample.blue + rightSample.blue) / 2) * weight;
-				alpha += ((leftSample.alpha + rightSample.alpha) / 2) * weight;
-				totalWeight += weight;
+			if (temporalColor) {
+				const temporalWeight = 1.4 + Math.min(1.6, temporalColor.weight * 4.5);
+				red += temporalColor.red * temporalWeight;
+				green += temporalColor.green * temporalWeight;
+				blue += temporalColor.blue * temporalWeight;
+				alpha += temporalColor.alpha * temporalWeight;
+				totalWeight += temporalWeight;
 			}
 
-			if (totalWeight <= 0.0001) {
+			if (!temporalColor || temporalColor.weight < 0.14) {
+				for (const direction of pairDirections) {
+					const leftSample = findDirectionalCleanupSample({
+						startX: x,
+						startY: y,
+						directionX: direction.x,
+						directionY: direction.y,
+						maskAlpha: mask.alpha,
+						sourceData,
+						regionWidth: mask.width,
+						regionHeight: mask.height,
+						maxDistance,
+					});
+					const rightSample = findDirectionalCleanupSample({
+						startX: x,
+						startY: y,
+						directionX: -direction.x,
+						directionY: -direction.y,
+						maskAlpha: mask.alpha,
+						sourceData,
+						regionWidth: mask.width,
+						regionHeight: mask.height,
+						maxDistance,
+					});
+					if (!leftSample || !rightSample) {
+						continue;
+					}
+
+					const colorDifference = Math.hypot(
+						leftSample.red - rightSample.red,
+						leftSample.green - rightSample.green,
+						leftSample.blue - rightSample.blue,
+					);
+					const similarity = 1 - clamp(colorDifference / 441.6729559300637, 0, 1);
+					const balance =
+						1 -
+						clamp(
+							Math.abs(leftSample.distance - rightSample.distance) /
+								Math.max(1, leftSample.distance + rightSample.distance),
+							0,
+							1,
+						);
+					const weight =
+						(0.15 + similarity * 0.85) *
+						(0.35 + balance * 0.65) /
+						Math.max(1, leftSample.distance + rightSample.distance);
+					if (weight <= 0.0001) {
+						continue;
+					}
+
+					red += ((leftSample.red + rightSample.red) / 2) * weight;
+					green += ((leftSample.green + rightSample.green) / 2) * weight;
+					blue += ((leftSample.blue + rightSample.blue) / 2) * weight;
+					alpha += ((leftSample.alpha + rightSample.alpha) / 2) * weight;
+					totalWeight += weight;
+				}
+			}
+
+			if (totalWeight <= 0.0001 || (!temporalColor && totalWeight < 0.08)) {
 				for (const direction of fallbackDirections) {
 					const sample = findDirectionalCleanupSample({
 						startX: x,
@@ -1182,23 +1426,22 @@ function applyNativeCursorCleanup({
 				continue;
 			}
 
-			const offset = maskOffset * 4;
 			const blend = clamp(maskStrength, 0, 1);
 			const targetRed = red / totalWeight;
 			const targetGreen = green / totalWeight;
 			const targetBlue = blue / totalWeight;
 			const targetAlpha = alpha / totalWeight;
-			targetData[offset] = Math.round(
-				sourceData[offset] + (targetRed - sourceData[offset]) * blend,
+			targetData[pixelOffset] = Math.round(
+				sourceData[pixelOffset] + (targetRed - sourceData[pixelOffset]) * blend,
 			);
-			targetData[offset + 1] = Math.round(
-				sourceData[offset + 1] + (targetGreen - sourceData[offset + 1]) * blend,
+			targetData[pixelOffset + 1] = Math.round(
+				sourceData[pixelOffset + 1] + (targetGreen - sourceData[pixelOffset + 1]) * blend,
 			);
-			targetData[offset + 2] = Math.round(
-				sourceData[offset + 2] + (targetBlue - sourceData[offset + 2]) * blend,
+			targetData[pixelOffset + 2] = Math.round(
+				sourceData[pixelOffset + 2] + (targetBlue - sourceData[pixelOffset + 2]) * blend,
 			);
-			targetData[offset + 3] = Math.round(
-				sourceData[offset + 3] + (targetAlpha - sourceData[offset + 3]) * blend,
+			targetData[pixelOffset + 3] = Math.round(
+				sourceData[pixelOffset + 3] + (targetAlpha - sourceData[pixelOffset + 3]) * blend,
 			);
 		}
 	}
@@ -1215,6 +1458,7 @@ export function applyCustomCursorEffect({
 	effectParams,
 	recordedCursor,
 	zoomEffects,
+	temporalCleanupFrames,
 }: {
 	source: CanvasImageSource;
 	width: number;
@@ -1223,6 +1467,7 @@ export function applyCustomCursorEffect({
 	effectParams: EffectParamValues;
 	recordedCursor?: RecordedCursorData;
 	zoomEffects: AppliedZoomEffect[];
+	temporalCleanupFrames?: TemporalCleanupFrame[];
 }): CanvasImageSource {
 	if (!recordedCursor || recordedCursor.events.length === 0) {
 		return source;
@@ -1284,6 +1529,21 @@ export function applyCustomCursorEffect({
 				height,
 			})
 		: null;
+	const temporalSamples =
+		cleanupMask && temporalCleanupFrames && temporalCleanupFrames.length > 0
+			? prepareTemporalCleanupSamples({
+					temporalCleanupFrames,
+					sourceTime,
+					events,
+					smoothness,
+					width,
+					height,
+					zoomEffects,
+					size,
+					cleanupSize,
+					cleanupMask,
+				})
+			: [];
 	const shouldCleanup = cleanupMask !== null;
 	const shouldDrawCursor =
 		opacity > 0.001 &&
@@ -1316,6 +1576,7 @@ export function applyCustomCursorEffect({
 			width,
 			height,
 			mask: cleanupMask,
+			temporalSamples,
 		});
 	}
 	if (!shouldDrawCursor) {

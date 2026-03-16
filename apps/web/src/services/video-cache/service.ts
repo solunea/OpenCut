@@ -9,6 +9,7 @@ import {
 interface VideoSinkData {
 	sink: CanvasSink;
 	iterator: AsyncGenerator<WrappedCanvas, void, unknown> | null;
+	previousFrame: WrappedCanvas | null;
 	currentFrame: WrappedCanvas | null;
 	nextFrame: WrappedCanvas | null;
 	lastTime: number;
@@ -16,9 +17,36 @@ interface VideoSinkData {
 	prefetchPromise: Promise<void> | null;
 }
 
+export interface VideoFrameWindow {
+	previousFrame: WrappedCanvas | null;
+	currentFrame: WrappedCanvas | null;
+	nextFrame: WrappedCanvas | null;
+}
+
 export class VideoCache {
 	private sinks = new Map<string, VideoSinkData>();
 	private initPromises = new Map<string, Promise<void>>();
+
+	private setCurrentFrame({
+		sinkData,
+		frame,
+		preservePrevious = true,
+	}: {
+		sinkData: VideoSinkData;
+		frame: WrappedCanvas;
+		preservePrevious?: boolean;
+	}): void {
+		if (
+			preservePrevious &&
+			sinkData.currentFrame &&
+			sinkData.currentFrame.timestamp <= frame.timestamp
+		) {
+			sinkData.previousFrame = sinkData.currentFrame;
+		} else if (!preservePrevious) {
+			sinkData.previousFrame = null;
+		}
+		sinkData.currentFrame = frame;
+	}
 
 	async getFrameAt({
 		mediaId,
@@ -35,7 +63,10 @@ export class VideoCache {
 		if (!sinkData) return null;
 
 		if (sinkData.nextFrame && sinkData.nextFrame.timestamp <= time) {
-			sinkData.currentFrame = sinkData.nextFrame;
+			this.setCurrentFrame({
+				sinkData,
+				frame: sinkData.nextFrame,
+			});
 			sinkData.nextFrame = null;
 			this.startPrefetch({ sinkData });
 		}
@@ -72,6 +103,24 @@ export class VideoCache {
 		return frame;
 	}
 
+	async getFrameWindowAt({
+		mediaId,
+		file,
+		time,
+	}: {
+		mediaId: string;
+		file: File;
+		time: number;
+	}): Promise<VideoFrameWindow> {
+		const currentFrame = await this.getFrameAt({ mediaId, file, time });
+		const sinkData = this.sinks.get(mediaId);
+		return {
+			previousFrame: sinkData?.previousFrame ?? null,
+			currentFrame,
+			nextFrame: sinkData?.nextFrame ?? null,
+		};
+	}
+
 	private isFrameValid({
 		frame,
 		time,
@@ -102,14 +151,20 @@ export class VideoCache {
 					sinkData.nextFrame &&
 					sinkData.nextFrame.timestamp <= targetTime + 0.05 // Tolerance
 				) {
-					sinkData.currentFrame = sinkData.nextFrame;
+					this.setCurrentFrame({
+						sinkData,
+						frame: sinkData.nextFrame,
+					});
 					sinkData.nextFrame = null;
 				} else {
 					const { value: frame, done } = await sinkData.iterator.next();
 
 					if (done || !frame) break;
 
-					sinkData.currentFrame = frame;
+					this.setCurrentFrame({
+						sinkData,
+						frame,
+					});
 				}
 
 				const frame = sinkData.currentFrame;
@@ -147,6 +202,7 @@ export class VideoCache {
 				sinkData.iterator = null;
 			}
 
+			sinkData.previousFrame = null;
 			sinkData.nextFrame = null;
 			sinkData.iterator = sinkData.sink.canvases(time);
 			sinkData.lastTime = time;
@@ -155,7 +211,11 @@ export class VideoCache {
 			const { value: frame } = await sinkData.iterator.next();
 
 			if (frame) {
-				sinkData.currentFrame = frame;
+				this.setCurrentFrame({
+					sinkData,
+					frame,
+					preservePrevious: false,
+				});
 
 				// Aggressively fetch next frame immediately to fill buffer
 				// This matches the mediaplayer example which fetches 2 frames on start
@@ -270,6 +330,7 @@ export class VideoCache {
 			this.sinks.set(mediaId, {
 				sink,
 				iterator: null,
+				previousFrame: null,
 				currentFrame: null,
 				nextFrame: null,
 				lastTime: -1,
