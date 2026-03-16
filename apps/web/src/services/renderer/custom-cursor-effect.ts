@@ -689,99 +689,355 @@ function getCursorDrawOffset({
 	return { x: 0, y: 0 };
 }
 
-interface CursorCleanupGeometry {
-	centerX: number;
-	centerY: number;
-	radiusX: number;
-	radiusY: number;
-	feather: number;
-	sampleDistance: number;
+interface CursorPoint {
+	x: number;
+	y: number;
 }
 
-function resolveCursorCleanupGeometry({
-	kind,
-	pixelX,
-	pixelY,
+interface CursorCleanupMask {
+	minX: number;
+	minY: number;
+	width: number;
+	height: number;
+	alpha: Uint8ClampedArray;
+}
+
+interface CleanupSample {
+	red: number;
+	green: number;
+	blue: number;
+	alpha: number;
+	distance: number;
+}
+
+function mapCursorPointThroughZoomEffects({
+	x,
+	y,
+	width,
+	height,
+	zoomEffects,
+}: {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	zoomEffects: AppliedZoomEffect[];
+}): CursorPoint {
+	let pixelX = x;
+	let pixelY = y;
+	for (const zoomEffect of zoomEffects) {
+		const transformedPoint = mapPointThroughZoomEffect({
+			x: pixelX,
+			y: pixelY,
+			width,
+			height,
+			effectParams: zoomEffect.effectParams,
+			progress: zoomEffect.progress,
+			duration: zoomEffect.duration,
+		});
+		pixelX = transformedPoint.x;
+		pixelY = transformedPoint.y;
+	}
+	return { x: pixelX, y: pixelY };
+}
+
+function resolveCursorPixelPositionAtTime({
+	events,
+	time,
+	smoothness,
+	width,
+	height,
+	zoomEffects,
+}: {
+	events: RecordedCursorEvent[];
+	time: number;
+	smoothness: number;
+	width: number;
+	height: number;
+	zoomEffects: AppliedZoomEffect[];
+}): CursorPoint {
+	const index = findEventIndexAtOrBefore({ events, time });
+	const position = resolveInterpolatedPosition({
+		events,
+		time,
+		index,
+		smoothness,
+	});
+	return mapCursorPointThroughZoomEffects({
+		x: position.x * width,
+		y: position.y * height,
+		width,
+		height,
+		zoomEffects,
+	});
+}
+
+function dedupeCursorPoints(points: CursorPoint[]): CursorPoint[] {
+	const uniquePoints: CursorPoint[] = [];
+	for (const point of points) {
+		const alreadyAdded = uniquePoints.some(
+			(existingPoint) =>
+				Math.hypot(existingPoint.x - point.x, existingPoint.y - point.y) <= 0.75,
+		);
+		if (!alreadyAdded) {
+			uniquePoints.push(point);
+		}
+	}
+	return uniquePoints;
+}
+
+function resolveCursorCleanupTrail({
+	events,
+	time,
+	smoothness,
+	width,
+	height,
+	zoomEffects,
+	currentPosition,
 	size,
 	cleanupSize,
 }: {
-	kind: CursorVisualKind;
-	pixelX: number;
-	pixelY: number;
+	events: RecordedCursorEvent[];
+	time: number;
+	smoothness: number;
+	width: number;
+	height: number;
+	zoomEffects: AppliedZoomEffect[];
+	currentPosition: CursorPoint;
 	size: number;
 	cleanupSize: number;
-}): CursorCleanupGeometry {
+}): CursorPoint[] {
+	const sampleOffset = 1 / 120;
+	const previousPosition = resolveCursorPixelPositionAtTime({
+		events,
+		time: Math.max(0, time - sampleOffset),
+		smoothness,
+		width,
+		height,
+		zoomEffects,
+	});
+	const nextPosition = resolveCursorPixelPositionAtTime({
+		events,
+		time: time + sampleOffset,
+		smoothness,
+		width,
+		height,
+		zoomEffects,
+	});
+	const deltaX = nextPosition.x - previousPosition.x;
+	const deltaY = nextPosition.y - previousPosition.y;
+	const travel = Math.hypot(deltaX, deltaY);
+	if (travel <= 0.35) {
+		return [currentPosition];
+	}
+
 	const cleanupScale = clamp(cleanupSize / 100, 0.6, 2.2);
-
-	if (kind === "text") {
-		return {
-			centerX: pixelX,
-			centerY: pixelY + size * 0.48,
-			radiusX: size * 0.16 * cleanupScale,
-			radiusY: size * 0.68 * cleanupScale,
-			feather: 0.35,
-			sampleDistance: size * 0.9 * cleanupScale,
-		};
+	const uncertaintyDistance = clamp(
+		travel * 0.28,
+		0,
+		Math.max(1.2, size * cleanupScale * 0.22),
+	);
+	if (uncertaintyDistance <= 0.35) {
+		return [currentPosition];
 	}
 
-	if (kind === "crosshair" || kind === "not-allowed") {
-		return {
-			centerX: pixelX,
-			centerY: pixelY,
-			radiusX: size * 0.44 * cleanupScale,
-			radiusY: size * 0.44 * cleanupScale,
-			feather: 0.4,
-			sampleDistance: size * 0.9 * cleanupScale,
-		};
-	}
-
-	if (kind === "grab" || kind === "grabbing") {
-		return {
-			centerX: pixelX + size * 0.18,
-			centerY: pixelY + size * 0.24,
-			radiusX: size * 0.4 * cleanupScale,
-			radiusY: size * 0.4 * cleanupScale,
-			feather: 0.42,
-			sampleDistance: size * 0.95 * cleanupScale,
-		};
-	}
-
-	if (kind === "pointer") {
-		return {
-			centerX: pixelX + size * 0.28,
-			centerY: pixelY + size * 0.42,
-			radiusX: size * 0.34 * cleanupScale,
-			radiusY: size * 0.46 * cleanupScale,
-			feather: 0.4,
-			sampleDistance: size * 0.95 * cleanupScale,
-		};
-	}
-
-	return {
-		centerX: pixelX + size * 0.2,
-		centerY: pixelY + size * 0.42,
-		radiusX: size * 0.34 * cleanupScale,
-		radiusY: size * 0.5 * cleanupScale,
-		feather: 0.42,
-		sampleDistance: size * 1.02 * cleanupScale,
-	};
+	const directionX = deltaX / travel;
+	const directionY = deltaY / travel;
+	return dedupeCursorPoints([
+		currentPosition,
+		{
+			x: currentPosition.x - directionX * uncertaintyDistance,
+			y: currentPosition.y - directionY * uncertaintyDistance,
+		},
+		{
+			x: currentPosition.x + directionX * uncertaintyDistance,
+			y: currentPosition.y + directionY * uncertaintyDistance,
+		},
+	]);
 }
 
-function cleanupBoundsIntersectFrame({
-	geometry,
+function resolveCursorCleanupExtent({
+	kind,
+	size,
+}: {
+	kind: CursorVisualKind;
+	size: number;
+}): { x: number; y: number } {
+	if (kind === "text") {
+		return { x: size * 0.42, y: size * 1.28 };
+	}
+	if (kind === "crosshair" || kind === "not-allowed") {
+		return { x: size * 0.84, y: size * 0.84 };
+	}
+	if (kind === "grab" || kind === "grabbing") {
+		return { x: size * 0.98, y: size * 0.98 };
+	}
+	if (kind === "pointer") {
+		return { x: size * 0.96, y: size * 1.06 };
+	}
+	return { x: size * 0.96, y: size * 1.3 };
+}
+
+function buildCursorCleanupMask({
+	positions,
+	kind,
+	size,
+	cleanupSize,
 	width,
 	height,
 }: {
-	geometry: CursorCleanupGeometry;
+	positions: CursorPoint[];
+	kind: CursorVisualKind;
+	size: number;
+	cleanupSize: number;
 	width: number;
 	height: number;
-}): boolean {
-	return !(
-		geometry.centerX + geometry.radiusX < 0 ||
-		geometry.centerY + geometry.radiusY < 0 ||
-		geometry.centerX - geometry.radiusX > width ||
-		geometry.centerY - geometry.radiusY > height
-	);
+}): CursorCleanupMask | null {
+	if (positions.length === 0) {
+		return null;
+	}
+
+	const cleanupScale = clamp(cleanupSize / 100, 0.6, 2.2);
+	const cleanupCursorSize = size * cleanupScale;
+	const cleanupDrawOffset = getCursorDrawOffset({
+		kind,
+		size: cleanupCursorSize,
+	});
+	const translatedPositions = positions.map((position) => ({
+		x: position.x + cleanupDrawOffset.x,
+		y: position.y + cleanupDrawOffset.y,
+	}));
+	const extent = resolveCursorCleanupExtent({
+		kind,
+		size: cleanupCursorSize,
+	});
+	const shadowBlur = Math.max(1.5, cleanupCursorSize * 0.16);
+	const padding = Math.ceil(Math.max(extent.x, extent.y) + shadowBlur * 2 + 3);
+	const minPositionX = Math.min(...translatedPositions.map((position) => position.x));
+	const maxPositionX = Math.max(...translatedPositions.map((position) => position.x));
+	const minPositionY = Math.min(...translatedPositions.map((position) => position.y));
+	const maxPositionY = Math.max(...translatedPositions.map((position) => position.y));
+	const minX = Math.max(0, Math.floor(minPositionX - padding));
+	const minY = Math.max(0, Math.floor(minPositionY - padding));
+	const maxX = Math.min(width, Math.ceil(maxPositionX + padding));
+	const maxY = Math.min(height, Math.ceil(maxPositionY + padding));
+	const regionWidth = Math.max(0, maxX - minX);
+	const regionHeight = Math.max(0, maxY - minY);
+	if (regionWidth <= 1 || regionHeight <= 1) {
+		return null;
+	}
+
+	const maskCanvas = createOffscreenCanvas({ width: regionWidth, height: regionHeight });
+	const maskContext = maskCanvas.getContext("2d") as RenderableContext | null;
+	if (!maskContext) {
+		return null;
+	}
+
+	maskContext.fillStyle = "#ffffff";
+	maskContext.strokeStyle = "#ffffff";
+	maskContext.shadowColor = "rgba(255, 255, 255, 0.96)";
+	maskContext.shadowBlur = shadowBlur;
+	maskContext.lineJoin = "round";
+	maskContext.lineCap = "round";
+
+	for (const position of translatedPositions) {
+		maskContext.save();
+		maskContext.translate(position.x - minX, position.y - minY);
+		drawCursorGlyph({
+			context: maskContext,
+			kind,
+			size: cleanupCursorSize,
+			fillColor: "#ffffff",
+			outlineColor: "#ffffff",
+			accentColor: "#ffffff",
+		});
+		maskContext.restore();
+	}
+
+	const maskImageData = maskContext.getImageData(0, 0, regionWidth, regionHeight);
+	const alpha = new Uint8ClampedArray(regionWidth * regionHeight);
+	let hasVisibleMask = false;
+	for (let index = 0; index < alpha.length; index += 1) {
+		const alphaValue = maskImageData.data[index * 4 + 3];
+		alpha[index] = alphaValue;
+		if (alphaValue > 10) {
+			hasVisibleMask = true;
+		}
+	}
+
+	if (!hasVisibleMask) {
+		return null;
+	}
+
+	return {
+		minX,
+		minY,
+		width: regionWidth,
+		height: regionHeight,
+		alpha,
+	};
+}
+
+function findDirectionalCleanupSample({
+	startX,
+	startY,
+	directionX,
+	directionY,
+	maskAlpha,
+	sourceData,
+	regionWidth,
+	regionHeight,
+	maxDistance,
+}: {
+	startX: number;
+	startY: number;
+	directionX: number;
+	directionY: number;
+	maskAlpha: Uint8ClampedArray;
+	sourceData: Uint8ClampedArray;
+	regionWidth: number;
+	regionHeight: number;
+	maxDistance: number;
+}): CleanupSample | null {
+	for (let distance = 1; distance <= maxDistance; distance += 1) {
+		const sampleX = Math.round(startX + directionX * distance);
+		const sampleY = Math.round(startY + directionY * distance);
+		if (
+			sampleX < 0 ||
+			sampleY < 0 ||
+			sampleX >= regionWidth ||
+			sampleY >= regionHeight
+		) {
+			return null;
+		}
+
+		const maskOffset = sampleY * regionWidth + sampleX;
+		if (maskAlpha[maskOffset] > 12) {
+			continue;
+		}
+
+		const secondDistance = Math.min(maxDistance, distance + 2);
+		const secondSampleX = clamp(
+			Math.round(startX + directionX * secondDistance),
+			0,
+			regionWidth - 1,
+		);
+		const secondSampleY = clamp(
+			Math.round(startY + directionY * secondDistance),
+			0,
+			regionHeight - 1,
+		);
+		const firstOffset = maskOffset * 4;
+		const secondOffset = (secondSampleY * regionWidth + secondSampleX) * 4;
+		return {
+			red: (sourceData[firstOffset] + sourceData[secondOffset]) / 2,
+			green: (sourceData[firstOffset + 1] + sourceData[secondOffset + 1]) / 2,
+			blue: (sourceData[firstOffset + 2] + sourceData[secondOffset + 2]) / 2,
+			alpha: (sourceData[firstOffset + 3] + sourceData[secondOffset + 3]) / 2,
+			distance,
+		};
+	}
+	return null;
 }
 
 function applyNativeCursorCleanup({
@@ -789,52 +1045,48 @@ function applyNativeCursorCleanup({
 	source,
 	width,
 	height,
-	geometry,
+	mask,
 }: {
 	context: RenderableContext;
 	source: CanvasImageSource;
 	width: number;
 	height: number;
-	geometry: CursorCleanupGeometry;
+	mask: CursorCleanupMask;
 }): void {
-	const padding = Math.ceil(
-		Math.max(geometry.radiusX, geometry.radiusY) + geometry.sampleDistance + 2,
-	);
-	const minX = Math.max(0, Math.floor(geometry.centerX - geometry.radiusX - padding));
-	const minY = Math.max(0, Math.floor(geometry.centerY - geometry.radiusY - padding));
-	const maxX = Math.min(width, Math.ceil(geometry.centerX + geometry.radiusX + padding));
-	const maxY = Math.min(height, Math.ceil(geometry.centerY + geometry.radiusY + padding));
-	const regionWidth = Math.max(0, maxX - minX);
-	const regionHeight = Math.max(0, maxY - minY);
-	if (regionWidth <= 1 || regionHeight <= 1) {
-		return;
-	}
-
-	const cleanupCanvas = createOffscreenCanvas({ width: regionWidth, height: regionHeight });
+	const cleanupCanvas = createOffscreenCanvas({
+		width: mask.width,
+		height: mask.height,
+	});
 	const cleanupContext = cleanupCanvas.getContext("2d") as RenderableContext | null;
 	if (!cleanupContext) {
 		return;
 	}
 
-	cleanupContext.drawImage(source, -minX, -minY, width, height);
-	const imageData = cleanupContext.getImageData(0, 0, regionWidth, regionHeight);
-	const originalData = new Uint8ClampedArray(imageData.data);
+	cleanupContext.drawImage(source, -mask.minX, -mask.minY, width, height);
+	const imageData = cleanupContext.getImageData(0, 0, mask.width, mask.height);
+	const sourceData = new Uint8ClampedArray(imageData.data);
 	const targetData = imageData.data;
-	const localCenterX = geometry.centerX - minX;
-	const localCenterY = geometry.centerY - minY;
-	const directionCount = 8;
+	const pairDirections = Array.from({ length: 8 }, (_value, index) => {
+		const angle = (index / 8) * Math.PI;
+		return {
+			x: Math.cos(angle),
+			y: Math.sin(angle),
+		};
+	});
+	const fallbackDirections = Array.from({ length: 16 }, (_value, index) => {
+		const angle = (index / 16) * Math.PI * 2;
+		return {
+			x: Math.cos(angle),
+			y: Math.sin(angle),
+		};
+	});
+	const maxDistance = Math.max(6, Math.ceil(Math.max(mask.width, mask.height) * 0.32));
 
-	for (let y = 0; y < regionHeight; y += 1) {
-		for (let x = 0; x < regionWidth; x += 1) {
-			const normalizedX = (x - localCenterX) / Math.max(geometry.radiusX, 0.0001);
-			const normalizedY = (y - localCenterY) / Math.max(geometry.radiusY, 0.0001);
-			const normalizedDistance = Math.hypot(normalizedX, normalizedY);
-			if (normalizedDistance > 1) {
-				continue;
-			}
-
-			const blend = clamp((1 - normalizedDistance) / geometry.feather, 0, 1);
-			if (blend <= 0.001) {
+	for (let y = 0; y < mask.height; y += 1) {
+		for (let x = 0; x < mask.width; x += 1) {
+			const maskOffset = y * mask.width + x;
+			const maskStrength = mask.alpha[maskOffset] / 255;
+			if (maskStrength <= 0.04) {
 				continue;
 			}
 
@@ -844,46 +1096,115 @@ function applyNativeCursorCleanup({
 			let alpha = 0;
 			let totalWeight = 0;
 
-			for (let directionIndex = 0; directionIndex < directionCount; directionIndex += 1) {
-				const angle = (directionIndex / directionCount) * Math.PI * 2;
-				const sampleX = Math.round(x + Math.cos(angle) * geometry.sampleDistance);
-				const sampleY = Math.round(y + Math.sin(angle) * geometry.sampleDistance);
-				const clampedSampleX = clamp(sampleX, 0, regionWidth - 1);
-				const clampedSampleY = clamp(sampleY, 0, regionHeight - 1);
-				const sampleOffset = (clampedSampleY * regionWidth + clampedSampleX) * 4;
-				const sampleAlpha = originalData[sampleOffset + 3] / 255;
-				const sampleWeight = 0.2 + sampleAlpha * 0.8;
-				red += originalData[sampleOffset] * sampleWeight;
-				green += originalData[sampleOffset + 1] * sampleWeight;
-				blue += originalData[sampleOffset + 2] * sampleWeight;
-				alpha += originalData[sampleOffset + 3] * sampleWeight;
-				totalWeight += sampleWeight;
+			for (const direction of pairDirections) {
+				const leftSample = findDirectionalCleanupSample({
+					startX: x,
+					startY: y,
+					directionX: direction.x,
+					directionY: direction.y,
+					maskAlpha: mask.alpha,
+					sourceData,
+					regionWidth: mask.width,
+					regionHeight: mask.height,
+					maxDistance,
+				});
+				const rightSample = findDirectionalCleanupSample({
+					startX: x,
+					startY: y,
+					directionX: -direction.x,
+					directionY: -direction.y,
+					maskAlpha: mask.alpha,
+					sourceData,
+					regionWidth: mask.width,
+					regionHeight: mask.height,
+					maxDistance,
+				});
+				if (!leftSample || !rightSample) {
+					continue;
+				}
+
+				const colorDifference = Math.hypot(
+					leftSample.red - rightSample.red,
+					leftSample.green - rightSample.green,
+					leftSample.blue - rightSample.blue,
+				);
+				const similarity = 1 - clamp(colorDifference / 441.6729559300637, 0, 1);
+				const balance =
+					1 -
+					clamp(
+						Math.abs(leftSample.distance - rightSample.distance) /
+							Math.max(1, leftSample.distance + rightSample.distance),
+						0,
+						1,
+					);
+				const weight =
+					(0.15 + similarity * 0.85) *
+					(0.35 + balance * 0.65) /
+					Math.max(1, leftSample.distance + rightSample.distance);
+				if (weight <= 0.0001) {
+					continue;
+				}
+
+				red += ((leftSample.red + rightSample.red) / 2) * weight;
+				green += ((leftSample.green + rightSample.green) / 2) * weight;
+				blue += ((leftSample.blue + rightSample.blue) / 2) * weight;
+				alpha += ((leftSample.alpha + rightSample.alpha) / 2) * weight;
+				totalWeight += weight;
+			}
+
+			if (totalWeight <= 0.0001) {
+				for (const direction of fallbackDirections) {
+					const sample = findDirectionalCleanupSample({
+						startX: x,
+						startY: y,
+						directionX: direction.x,
+						directionY: direction.y,
+						maskAlpha: mask.alpha,
+						sourceData,
+						regionWidth: mask.width,
+						regionHeight: mask.height,
+						maxDistance,
+					});
+					if (!sample) {
+						continue;
+					}
+
+					const weight = 1 / Math.max(1, sample.distance * 1.4);
+					red += sample.red * weight;
+					green += sample.green * weight;
+					blue += sample.blue * weight;
+					alpha += sample.alpha * weight;
+					totalWeight += weight;
+				}
 			}
 
 			if (totalWeight <= 0.0001) {
 				continue;
 			}
 
-			const offset = (y * regionWidth + x) * 4;
-			const mixedRed = red / totalWeight;
-			const mixedGreen = green / totalWeight;
-			const mixedBlue = blue / totalWeight;
-			const mixedAlpha = alpha / totalWeight;
-			targetData[offset] = Math.round(originalData[offset] + (mixedRed - originalData[offset]) * blend);
+			const offset = maskOffset * 4;
+			const blend = clamp(maskStrength, 0, 1);
+			const targetRed = red / totalWeight;
+			const targetGreen = green / totalWeight;
+			const targetBlue = blue / totalWeight;
+			const targetAlpha = alpha / totalWeight;
+			targetData[offset] = Math.round(
+				sourceData[offset] + (targetRed - sourceData[offset]) * blend,
+			);
 			targetData[offset + 1] = Math.round(
-				originalData[offset + 1] + (mixedGreen - originalData[offset + 1]) * blend,
+				sourceData[offset + 1] + (targetGreen - sourceData[offset + 1]) * blend,
 			);
 			targetData[offset + 2] = Math.round(
-				originalData[offset + 2] + (mixedBlue - originalData[offset + 2]) * blend,
+				sourceData[offset + 2] + (targetBlue - sourceData[offset + 2]) * blend,
 			);
 			targetData[offset + 3] = Math.round(
-				originalData[offset + 3] + (mixedAlpha - originalData[offset + 3]) * blend,
+				sourceData[offset + 3] + (targetAlpha - sourceData[offset + 3]) * blend,
 			);
 		}
 	}
 
 	cleanupContext.putImageData(imageData, 0, 0);
-	context.drawImage(cleanupCanvas, minX, minY);
+	context.drawImage(cleanupCanvas, mask.minX, mask.minY);
 }
 
 export function applyCustomCursorEffect({
@@ -921,21 +1242,15 @@ export function applyCustomCursorEffect({
 		index,
 		smoothness,
 	});
-	let pixelX = position.x * width;
-	let pixelY = position.y * height;
-	for (const zoomEffect of zoomEffects) {
-		const transformedPoint = mapPointThroughZoomEffect({
-			x: pixelX,
-			y: pixelY,
-			width,
-			height,
-			effectParams: zoomEffect.effectParams,
-			progress: zoomEffect.progress,
-			duration: zoomEffect.duration,
-		});
-		pixelX = transformedPoint.x;
-		pixelY = transformedPoint.y;
-	}
+	const transformedPosition = mapCursorPointThroughZoomEffects({
+		x: position.x * width,
+		y: position.y * height,
+		width,
+		height,
+		zoomEffects,
+	});
+	const pixelX = transformedPosition.x;
+	const pixelY = transformedPosition.y;
 
 	const size = clamp(resolveNumber({ value: effectParams.size, fallback: 28 }), 10, 96);
 	const opacity = clamp(resolveNumber({ value: effectParams.opacity, fallback: 100 }) / 100, 0, 1);
@@ -949,20 +1264,27 @@ export function applyCustomCursorEffect({
 		220,
 	);
 	const kind = normalizeCursorKind(currentEvent.cursor);
-	const cleanupGeometry = resolveCursorCleanupGeometry({
-		kind,
-		pixelX,
-		pixelY,
-		size,
-		cleanupSize,
-	});
-	const shouldCleanup =
-		removeNativeCursor &&
-		cleanupBoundsIntersectFrame({
-			geometry: cleanupGeometry,
-			width,
-			height,
-		});
+	const cleanupMask = removeNativeCursor
+		? buildCursorCleanupMask({
+				positions: resolveCursorCleanupTrail({
+					events,
+					time: sourceTime,
+					smoothness,
+					width,
+					height,
+					zoomEffects,
+					currentPosition: transformedPosition,
+					size,
+					cleanupSize,
+				}),
+				kind,
+				size,
+				cleanupSize,
+				width,
+				height,
+			})
+		: null;
+	const shouldCleanup = cleanupMask !== null;
 	const shouldDrawCursor =
 		opacity > 0.001 &&
 		!(pixelX < -size || pixelY < -size || pixelX > width + size || pixelY > height + size);
@@ -993,7 +1315,7 @@ export function applyCustomCursorEffect({
 			source,
 			width,
 			height,
-			geometry: cleanupGeometry,
+			mask: cleanupMask,
 		});
 	}
 	if (!shouldDrawCursor) {
