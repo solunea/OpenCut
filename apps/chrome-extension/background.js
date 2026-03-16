@@ -185,8 +185,9 @@ async function stopAndExportSession({ controllerTabId, controllerWindowId }) {
 	const sampleCount = Array.isArray(payload?.cursorTracking?.samples)
 		? payload.cursorTracking.samples.length
 		: 0;
+	const eventCount = Array.isArray(payload?.events) ? payload.events.length : 0;
 
-	if (sampleCount === 0) {
+	if (sampleCount === 0 && eventCount === 0) {
 		throw new Error("The extension recorded no usable cursor samples for the captured tab");
 	}
 
