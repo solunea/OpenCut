@@ -724,6 +724,7 @@ interface CursorCleanupMask {
 	width: number;
 	height: number;
 	alpha: Uint8ClampedArray;
+	positions: CursorPoint[];
 }
 
 interface CleanupSample {
@@ -801,7 +802,7 @@ function drawCleanupMaskDebugOverlay({
 		overlayImageData.data[offset] = 236;
 		overlayImageData.data[offset + 1] = 72;
 		overlayImageData.data[offset + 2] = 153;
-		overlayImageData.data[offset + 3] = Math.round(alpha * 0.32);
+		overlayImageData.data[offset + 3] = Math.round(alpha * 0.48);
 	}
 
 	overlayContext.putImageData(overlayImageData, 0, 0);
@@ -817,6 +818,29 @@ function drawCleanupMaskDebugOverlay({
 	context.fillStyle = "rgba(236, 72, 153, 0.98)";
 	context.fillText("CLEANUP", mask.minX + 10, Math.max(16, mask.minY - 8));
 	context.restore();
+
+	if (mask.positions.length > 1) {
+		context.save();
+		context.strokeStyle = "rgba(236, 72, 153, 0.92)";
+		context.lineWidth = 1.5;
+		context.setLineDash([4, 3]);
+		context.beginPath();
+		context.moveTo(mask.positions[0].x, mask.positions[0].y);
+		for (let index = 1; index < mask.positions.length; index += 1) {
+			context.lineTo(mask.positions[index].x, mask.positions[index].y);
+		}
+		context.stroke();
+		context.restore();
+	}
+
+	mask.positions.forEach((position, index) => {
+		drawDebugMarker({
+			context,
+			position,
+			color: "rgba(236, 72, 153, 0.98)",
+			label: index === 0 ? "CLEANUP" : `CLEANUP ${index + 1}`,
+		});
+	});
 }
 
 function drawCustomCursorDebugOverlay({
@@ -1126,6 +1150,7 @@ function buildCursorCleanupMask({
 		width: regionWidth,
 		height: regionHeight,
 		alpha,
+		positions: translatedPositions,
 	};
 }
 
