@@ -68,6 +68,24 @@ const renderToThumbnailDataUrl = ({
 	return canvas.toDataURL("image/jpeg", 0.8);
 };
 
+const getThumbnailTimeInSeconds = ({
+	duration,
+	preferredTimeInSeconds,
+}: {
+	duration?: number;
+	preferredTimeInSeconds: number;
+}): number => {
+	if (!Number.isFinite(duration) || !duration || duration <= 0) {
+		return Math.max(0, preferredTimeInSeconds);
+	}
+
+	const safeEndOffset = Math.min(0.05, duration / 4);
+	return Math.max(
+		0,
+		Math.min(preferredTimeInSeconds, Math.max(0, duration - safeEndOffset)),
+	);
+};
+
 export async function generateThumbnail({
 	videoFile,
 	timeInSeconds,
@@ -109,6 +127,117 @@ export async function generateThumbnail({
 	} finally {
 		frame.close();
 	}
+}
+
+async function generateThumbnailFromVideoElement({
+	videoFile,
+	timeInSeconds,
+}: {
+	videoFile: File;
+	timeInSeconds: number;
+}): Promise<{
+	dataUrl: string;
+	duration: number;
+	height: number;
+	width: number;
+}> {
+	return await new Promise((resolve, reject) => {
+		const video = document.createElement("video");
+		const objectUrl = URL.createObjectURL(videoFile);
+		let settled = false;
+
+		const cleanup = () => {
+			URL.revokeObjectURL(objectUrl);
+			video.pause();
+			video.removeAttribute("src");
+			video.load();
+			video.remove();
+		};
+
+		const settle = (
+			callback: () => void,
+		) => {
+			if (settled) {
+				return;
+			}
+
+			settled = true;
+			callback();
+			cleanup();
+		};
+
+		const capture = () => {
+			if (!video.videoWidth || !video.videoHeight) {
+				settle(() => reject(new Error("Could not read video frame size")));
+				return;
+			}
+
+			try {
+				const dataUrl = renderToThumbnailDataUrl({
+					width: video.videoWidth,
+					height: video.videoHeight,
+					draw: ({ context, width, height }) => {
+						context.drawImage(video, 0, 0, width, height);
+					},
+				});
+
+				settle(() =>
+					resolve({
+						dataUrl,
+						duration: Number.isFinite(video.duration) ? video.duration : 0,
+						height: video.videoHeight,
+						width: video.videoWidth,
+					}),
+				);
+			} catch (error) {
+				settle(() =>
+					reject(
+						error instanceof Error
+							? error
+							: new Error("Could not render video thumbnail"),
+					),
+				);
+			}
+		};
+
+		video.addEventListener(
+			"loadedmetadata",
+			() => {
+				const targetTimeInSeconds = getThumbnailTimeInSeconds({
+					duration: video.duration,
+					preferredTimeInSeconds: timeInSeconds,
+				});
+
+				try {
+					video.currentTime = targetTimeInSeconds;
+				} catch (error) {
+					settle(() =>
+						reject(
+							error instanceof Error
+								? error
+								: new Error("Could not seek video for thumbnail"),
+						),
+					);
+				}
+			},
+			{ once: true },
+		);
+
+		video.addEventListener("seeked", capture, { once: true });
+		video.addEventListener(
+			"error",
+			() => {
+				settle(() => reject(new Error("Could not load video")));
+			},
+			{ once: true },
+		);
+
+		video.muted = true;
+		video.playsInline = true;
+		video.preload = "metadata";
+		video.src = objectUrl;
+		video.load();
+	});
 }
 
 export async function generateImageThumbnail({
@@ -194,6 +323,9 @@ export async function processMediaAssets({
 				height = dimensions.height;
 				thumbnailUrl = await generateImageThumbnail({ imageFile: file });
 			} else if (fileType === "video") {
+				const preferredThumbnailTimeInSeconds = 1;
+				let thumbnailTimeInSeconds = preferredThumbnailTimeInSeconds;
+
 				try {
 					const videoInfo = await getVideoInfo({ videoFile: file });
 					duration = videoInfo.duration;
@@ -202,13 +334,35 @@ export async function processMediaAssets({
 					fps = Number.isFinite(videoInfo.fps)
 						? Math.round(videoInfo.fps)
 						: undefined;
+				} catch (error) {
+					console.warn("Video metadata processing failed", error);
+				}
 
+				thumbnailTimeInSeconds = getThumbnailTimeInSeconds({
+					duration,
+					preferredTimeInSeconds: preferredThumbnailTimeInSeconds,
+				});
+
+				try {
 					thumbnailUrl = await generateThumbnail({
 						videoFile: file,
-						timeInSeconds: 1,
+						timeInSeconds: thumbnailTimeInSeconds,
 					});
 				} catch (error) {
-					console.warn("Video processing failed", error);
+					console.warn("Video thumbnail decoding failed", error);
+
+					try {
+						const browserThumbnail = await generateThumbnailFromVideoElement({
+							videoFile: file,
+							timeInSeconds: thumbnailTimeInSeconds,
+						});
+						thumbnailUrl = browserThumbnail.dataUrl;
+						duration = duration ?? browserThumbnail.duration;
+						width = width ?? browserThumbnail.width;
+						height = height ?? browserThumbnail.height;
+					} catch (fallbackError) {
+						console.warn("Browser video thumbnail generation failed", fallbackError);
+					}
 				}
 			} else if (fileType === "audio") {
 				// For audio, we don't set width/height/fps (they'll be undefined)

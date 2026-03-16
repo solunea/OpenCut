@@ -36,8 +36,12 @@ interface TabCaptureDialogProps {
 	onOpenChange: (open: boolean) => void;
 }
 
+type CursorCaptureConstraint = "always" | "motion" | "never";
 type DisplayMediaVideoConstraints = MediaTrackConstraints & {
-	cursor?: "always" | "motion" | "never";
+	cursor?: CursorCaptureConstraint;
+};
+type DisplayCaptureTrackSettings = MediaTrackSettings & {
+	cursor?: CursorCaptureConstraint;
 };
 
 async function applyCursorVisibilityConstraint({
@@ -46,13 +50,13 @@ async function applyCursorVisibilityConstraint({
 }: {
 	stream: MediaStream;
 	shouldHideNativeCursor: boolean;
-}): Promise<void> {
+}): Promise<CursorCaptureConstraint | undefined> {
 	const [videoTrack] = stream.getVideoTracks();
 	if (!videoTrack) {
-		return;
+		return undefined;
 	}
 
-	const cursor = shouldHideNativeCursor ? "never" : "always";
+	const cursor: CursorCaptureConstraint = shouldHideNativeCursor ? "never" : "always";
 	try {
 		await videoTrack.applyConstraints({
 			cursor,
@@ -60,6 +64,8 @@ async function applyCursorVisibilityConstraint({
 	} catch (error) {
 		console.warn("Failed to apply cursor visibility constraint to tab capture", error);
 	}
+
+	return (videoTrack.getSettings() as DisplayCaptureTrackSettings).cursor;
 }
 
 function getSupportedRecorderMimeType(): string | undefined {
@@ -237,10 +243,18 @@ export function TabCaptureDialog({
 				video: videoConstraints,
 				audio: true,
 			});
-			await applyCursorVisibilityConstraint({
+			const appliedCursor = await applyCursorVisibilityConstraint({
 				stream,
 				shouldHideNativeCursor,
 			});
+			if (shouldHideNativeCursor && appliedCursor !== undefined && appliedCursor !== "never") {
+				toast.warning("Browser did not fully hide the native cursor", {
+					description:
+						"The capture track is using cursor mode \"" +
+						appliedCursor +
+						'" instead of "never".',
+				});
+			}
 			await startCursorTrackingCaptureSession({
 				shouldHideNativeCursor,
 			});
