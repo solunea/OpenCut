@@ -101,6 +101,20 @@
 		state.shouldHideNativeCursor = shouldHideNativeCursor;
 	}
 
+	function stopTrackingState() {
+		state.isTracking = false;
+		state.shouldHideNativeCursor = false;
+	}
+
+	function broadcastFrameLifecycle(message) {
+		for (const element of document.querySelectorAll("iframe, frame")) {
+			try {
+				element.contentWindow?.postMessage(message, "*");
+			} catch {
+			}
+		}
+	}
+
 	function recordEvent({
 		type,
 		x,
@@ -420,6 +434,21 @@
 	window.addEventListener("message", (event) => {
 		const message = event.data;
 		if (
+			message &&
+			message.namespace === FRAME_RELAY_NAMESPACE &&
+			(message.type === "start-tracking" || message.type === "stop-tracking")
+		) {
+			if (message.type === "start-tracking") {
+				resetTracking({
+					shouldHideNativeCursor: Boolean(message.payload?.shouldHideNativeCursor),
+				});
+			} else {
+				stopTrackingState();
+			}
+			broadcastFrameLifecycle(message);
+			return;
+		}
+		if (
 			!message ||
 			message.namespace !== FRAME_RELAY_NAMESPACE ||
 			message.type !== "cursor-event" ||
@@ -514,9 +543,15 @@
 		}
 
 		if (message.type === "start") {
-			resetTracking({
-				shouldHideNativeCursor: Boolean(message.payload?.shouldHideNativeCursor),
-			});
+			const lifecycleMessage = {
+				namespace: FRAME_RELAY_NAMESPACE,
+				type: "start-tracking",
+				payload: {
+					shouldHideNativeCursor: Boolean(message.payload?.shouldHideNativeCursor),
+				},
+			};
+			resetTracking(lifecycleMessage.payload);
+			broadcastFrameLifecycle(lifecycleMessage);
 			sendResponse({
 				ok: true,
 				tracking: true,
@@ -527,8 +562,12 @@
 		}
 
 		if (message.type === "stop") {
-			state.isTracking = false;
-			state.shouldHideNativeCursor = false;
+			const lifecycleMessage = {
+				namespace: FRAME_RELAY_NAMESPACE,
+				type: "stop-tracking",
+			};
+			stopTrackingState();
+			broadcastFrameLifecycle(lifecycleMessage);
 			sendResponse({ ok: true, tracking: false, eventCount: state.events.length });
 			return false;
 		}
