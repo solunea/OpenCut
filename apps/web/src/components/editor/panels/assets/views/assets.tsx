@@ -14,12 +14,22 @@ import {
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
+	Dialog,
+	DialogBody,
+	DialogContent,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
 	Tooltip,
 	TooltipContent,
@@ -79,6 +89,7 @@ export function MediaView() {
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [progress, setProgress] = useState(0);
 	const [isCaptureDialogOpen, setIsCaptureDialogOpen] = useState(false);
+	const [assetToRename, setAssetToRename] = useState<MediaAsset | null>(null);
 
 	const handleDownloadExtension = () => {
 		const anchor = document.createElement("a");
@@ -171,6 +182,33 @@ export function MediaView() {
 		});
 	};
 
+	const handleRename = async ({ id, name }: { id: string; name: string }) => {
+		if (!activeProject) {
+			toast.error("No active project");
+			return;
+		}
+
+		const trimmedName = name.trim();
+		if (!trimmedName) {
+			toast.error("File name cannot be empty");
+			return;
+		}
+
+		const updatedAsset = await editor.media.updateMediaAsset({
+			projectId: activeProject.metadata.id,
+			id,
+			updates: { name: trimmedName },
+		});
+
+		if (!updatedAsset) {
+			toast.error("Failed to rename file");
+			return;
+		}
+
+		toast.success("File renamed");
+		setAssetToRename(null);
+	};
+
 	const handleSort = ({ key }: { key: MediaSortKey }) => {
 		if (mediaSortBy === key) {
 			setMediaSort(key, mediaSortOrder === "asc" ? "desc" : "asc");
@@ -255,11 +293,22 @@ export function MediaView() {
 						items={filteredMediaItems}
 						mode={mediaViewMode}
 						onRemove={handleRemove}
+						onRename={setAssetToRename}
 						highlightedId={highlightedId}
 						registerElement={registerElement}
 					/>
 				)}
 			</PanelView>
+			<RenameMediaDialog
+				asset={assetToRename}
+				isOpen={assetToRename !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setAssetToRename(null);
+					}
+				}}
+				onConfirm={({ id, name }) => void handleRename({ id, name })}
+			/>
 		</>
 	);
 }
@@ -326,67 +375,68 @@ function MediaAssetDraggable({
 }
 
 function MediaItemWithContextMenu({
-item,
-children,
-onRemove,
+	item,
+	children,
+	onRemove,
+	onRename,
 }: {
-item: MediaAsset;
-children: React.ReactNode;
-onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
+	item: MediaAsset;
+	children: React.ReactNode;
+	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
+	onRename: (asset: MediaAsset) => void;
 }) {
-const hasReadyCursorTracking = item.cursorTracking?.status === "ready";
-const handleAttachCursorTracking = () => {
-const input = document.createElement("input");
-input.type = "file";
-input.accept = ".json,application/json";
-input.multiple = false;
-input.addEventListener("change", () => {
-const file = input.files?.[0];
-if (!file) {
-return;
-}
-invokeAction(
-"attach-cursor-tracking",
-{ mediaId: item.id, file },
-"mouseclick",
-);
-});
-input.click();
-};
+	const hasReadyCursorTracking = item.cursorTracking?.status === "ready";
+	const handleAttachCursorTracking = () => {
+		const input = document.createElement("input");
+		input.type = "file";
+		input.accept = ".json,application/json";
+		input.multiple = false;
+		input.addEventListener("change", () => {
+			const file = input.files?.[0];
+			if (!file) {
+				return;
+			}
+			invokeAction("attach-cursor-tracking", { mediaId: item.id, file }, "mouseclick");
+		});
+		input.click();
+	};
 
-return (
-<ContextMenu>
-<ContextMenuTrigger>{children}</ContextMenuTrigger>
-<ContextMenuContent>
-{item.type === "video" ? (
-<ContextMenuItem onClick={handleAttachCursorTracking}>
-{hasReadyCursorTracking
-? "Replace cursor tracking"
-: "Attach cursor tracking"}
-</ContextMenuItem>
-) : null}
-<ContextMenuItem>Export clips</ContextMenuItem>
-<ContextMenuItem
-variant="destructive"
-onClick={(event) => onRemove({ event, id: item.id })}
->
-Delete
-</ContextMenuItem>
-</ContextMenuContent>
-</ContextMenu>
-);
+	return (
+		<ContextMenu>
+			<ContextMenuTrigger>{children}</ContextMenuTrigger>
+			<ContextMenuContent>
+				<ContextMenuItem onClick={() => onRename(item)}>Rename</ContextMenuItem>
+				{item.type === "video" ? (
+					<ContextMenuItem onClick={handleAttachCursorTracking}>
+						{hasReadyCursorTracking
+							? "Replace cursor tracking"
+							: "Attach cursor tracking"}
+					</ContextMenuItem>
+				) : null}
+				<ContextMenuItem>Export clips</ContextMenuItem>
+				<ContextMenuItem
+					variant="destructive"
+					onClick={(event) => onRemove({ event, id: item.id })}
+				>
+					Delete
+				</ContextMenuItem>
+			</ContextMenuContent>
+		</ContextMenu>
+	);
 }
 
 function MediaItemList({
 	items,
 	mode,
 	onRemove,
+	onRename,
 	highlightedId,
 	registerElement,
 }: {
 	items: MediaAsset[];
 	mode: MediaViewMode;
 	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
+	onRename: (asset: MediaAsset) => void;
 	highlightedId: string | null;
 	registerElement: (id: string, element: HTMLElement | null) => void;
 }) {
@@ -401,7 +451,7 @@ function MediaItemList({
 		>
 			{items.map((item) => (
 				<div key={item.id} ref={(element) => registerElement(item.id, element)}>
-					<MediaItemWithContextMenu item={item} onRemove={onRemove}>
+					<MediaItemWithContextMenu item={item} onRemove={onRemove} onRename={onRename}>
 						<MediaAssetDraggable
 							item={item}
 							preview={
@@ -418,6 +468,62 @@ function MediaItemList({
 				</div>
 			))}
 		</div>
+	);
+}
+
+function RenameMediaDialog({
+	asset,
+	isOpen,
+	onOpenChange,
+	onConfirm,
+}: {
+	asset: MediaAsset | null;
+	isOpen: boolean;
+	onOpenChange: (open: boolean) => void;
+	onConfirm: ({ id, name }: { id: string; name: string }) => void;
+}) {
+	const [name, setName] = useState("");
+
+	const handleOpenChange = (open: boolean) => {
+		if (open && asset) {
+			setName(asset.name);
+		}
+		onOpenChange(open);
+	};
+
+	if (!asset) {
+		return null;
+	}
+
+	return (
+		<Dialog open={isOpen} onOpenChange={handleOpenChange}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>Rename file</DialogTitle>
+				</DialogHeader>
+				<DialogBody className="gap-3">
+					<Label htmlFor="rename-media-input">New name</Label>
+					<Input
+						id="rename-media-input"
+						value={name}
+						onChange={(event) => setName(event.target.value)}
+						onKeyDown={(event) => {
+							if (event.key === "Enter") {
+								event.preventDefault();
+								onConfirm({ id: asset.id, name });
+							}
+						}}
+						placeholder="Enter a new file name"
+					/>
+				</DialogBody>
+				<DialogFooter>
+					<Button variant="outline" onClick={() => onOpenChange(false)}>
+						Cancel
+					</Button>
+					<Button onClick={() => onConfirm({ id: asset.id, name })}>Rename</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }
 

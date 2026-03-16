@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
 	cancelCursorTrackingCaptureSession,
 	startCursorTrackingCaptureSession,
@@ -37,6 +39,28 @@ interface TabCaptureDialogProps {
 type DisplayMediaVideoConstraints = MediaTrackConstraints & {
 	cursor?: "always" | "motion" | "never";
 };
+
+async function applyCursorVisibilityConstraint({
+	stream,
+	shouldHideNativeCursor,
+}: {
+	stream: MediaStream;
+	shouldHideNativeCursor: boolean;
+}): Promise<void> {
+	const [videoTrack] = stream.getVideoTracks();
+	if (!videoTrack) {
+		return;
+	}
+
+	const cursor = shouldHideNativeCursor ? "never" : "always";
+	try {
+		await videoTrack.applyConstraints({
+			cursor,
+		} as MediaTrackConstraints);
+	} catch (error) {
+		console.warn("Failed to apply cursor visibility constraint to tab capture", error);
+	}
+}
 
 function getSupportedRecorderMimeType(): string | undefined {
 	const candidates = [
@@ -75,6 +99,7 @@ export function TabCaptureDialog({
 	onOpenChange,
 }: TabCaptureDialogProps) {
 	const [captureState, setCaptureState] = useState<CaptureState>("idle");
+	const [shouldHideNativeCursor, setShouldHideNativeCursor] = useState(true);
 	const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const recorderRef = useRef<MediaRecorder | null>(null);
@@ -206,11 +231,15 @@ export function TabCaptureDialog({
 		try {
 			const videoConstraints: DisplayMediaVideoConstraints = {
 				frameRate: 30,
-				cursor: "never",
+				cursor: shouldHideNativeCursor ? "never" : "always",
 			};
 			const stream = await navigator.mediaDevices.getDisplayMedia({
 				video: videoConstraints,
 				audio: true,
+			});
+			await applyCursorVisibilityConstraint({
+				stream,
+				shouldHideNativeCursor,
 			});
 			await startCursorTrackingCaptureSession();
 			hasCursorTrackingSessionRef.current = true;
@@ -307,6 +336,20 @@ export function TabCaptureDialog({
 								: isFinalizing
 									? "Finalizing, importing capture, and attaching cursor tracking..."
 									: "Tip: choose a browser tab in the system picker for the cleanest result."}
+						</div>
+						<div className="flex items-center justify-between rounded-lg border px-3 py-2">
+							<div className="flex flex-col gap-0.5">
+								<Label htmlFor="hide-native-cursor">Hide mouse cursor in tab capture</Label>
+								<span className="text-muted-foreground text-xs">
+									Disable this if you want the browser to include the native cursor in the recording.
+								</span>
+							</div>
+							<Switch
+								id="hide-native-cursor"
+								checked={shouldHideNativeCursor}
+								onCheckedChange={setShouldHideNativeCursor}
+								disabled={isRecording || isFinalizing}
+							/>
 						</div>
 					</div>
 				</DialogBody>
