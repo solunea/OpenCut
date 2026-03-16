@@ -74,6 +74,12 @@ export const customCursorEffectDefinition: EffectDefinition = {
 			type: "boolean",
 			default: true,
 		},
+		{
+			key: "debugOverlay",
+			label: "Debug Overlay",
+			type: "boolean",
+			default: false,
+		},
 	],
 	renderer: {
 		type: "custom",

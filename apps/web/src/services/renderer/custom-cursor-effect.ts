@@ -740,6 +740,127 @@ interface PreparedTemporalCleanupSample {
 	timeDistance: number;
 }
 
+function drawDebugMarker({
+	context,
+	position,
+	color,
+	label,
+}: {
+	context: RenderableContext;
+	position: CursorPoint;
+	color: string;
+	label: string;
+}): void {
+	context.save();
+	context.strokeStyle = color;
+	context.fillStyle = color;
+	context.lineWidth = 2;
+	context.beginPath();
+	context.arc(position.x, position.y, 5, 0, Math.PI * 2);
+	context.stroke();
+	context.beginPath();
+	context.moveTo(position.x - 10, position.y);
+	context.lineTo(position.x + 10, position.y);
+	context.moveTo(position.x, position.y - 10);
+	context.lineTo(position.x, position.y + 10);
+	context.stroke();
+	context.font = "600 12px Inter, system-ui, sans-serif";
+	const textWidth = context.measureText(label).width;
+	const labelX = clamp(position.x + 12, 6, Math.max(6, position.x + 12));
+	const labelY = Math.max(18, position.y - 12);
+	context.fillStyle = "rgba(15, 23, 42, 0.82)";
+	context.fillRect(labelX - 4, labelY - 12, textWidth + 8, 16);
+	context.fillStyle = color;
+	context.fillText(label, labelX, labelY);
+	context.restore();
+}
+
+function drawCleanupMaskDebugOverlay({
+	context,
+	mask,
+}: {
+	context: RenderableContext;
+	mask: CursorCleanupMask;
+}): void {
+	const overlayCanvas = createOffscreenCanvas({
+		width: mask.width,
+		height: mask.height,
+	});
+	const overlayContext = overlayCanvas.getContext("2d") as RenderableContext | null;
+	if (!overlayContext) {
+		return;
+	}
+
+	const overlayImageData = overlayContext.createImageData(mask.width, mask.height);
+	for (let index = 0; index < mask.alpha.length; index += 1) {
+		const alpha = mask.alpha[index];
+		if (alpha <= 0) {
+			continue;
+		}
+		const offset = index * 4;
+		overlayImageData.data[offset] = 236;
+		overlayImageData.data[offset + 1] = 72;
+		overlayImageData.data[offset + 2] = 153;
+		overlayImageData.data[offset + 3] = Math.round(alpha * 0.32);
+	}
+
+	overlayContext.putImageData(overlayImageData, 0, 0);
+
+	context.save();
+	context.drawImage(overlayCanvas, mask.minX, mask.minY);
+	context.strokeStyle = "rgba(236, 72, 153, 0.95)";
+	context.lineWidth = 1.5;
+	context.strokeRect(mask.minX + 0.75, mask.minY + 0.75, mask.width - 1.5, mask.height - 1.5);
+	context.font = "600 12px Inter, system-ui, sans-serif";
+	context.fillStyle = "rgba(15, 23, 42, 0.82)";
+	context.fillRect(mask.minX + 6, Math.max(4, mask.minY - 20), 74, 16);
+	context.fillStyle = "rgba(236, 72, 153, 0.98)";
+	context.fillText("CLEANUP", mask.minX + 10, Math.max(16, mask.minY - 8));
+	context.restore();
+}
+
+function drawCustomCursorDebugOverlay({
+	context,
+	rawTrackedPosition,
+	renderedCursorPosition,
+	cleanupMask,
+}: {
+	context: RenderableContext;
+	rawTrackedPosition: CursorPoint;
+	renderedCursorPosition: CursorPoint;
+	cleanupMask: CursorCleanupMask | null;
+}): void {
+	if (cleanupMask) {
+		drawCleanupMaskDebugOverlay({
+			context,
+			mask: cleanupMask,
+		});
+	}
+
+	context.save();
+	context.strokeStyle = "rgba(148, 163, 184, 0.9)";
+	context.lineWidth = 1.5;
+	context.setLineDash([5, 4]);
+	context.beginPath();
+	context.moveTo(rawTrackedPosition.x, rawTrackedPosition.y);
+	context.lineTo(renderedCursorPosition.x, renderedCursorPosition.y);
+	context.stroke();
+	context.restore();
+
+	drawDebugMarker({
+		context,
+		position: rawTrackedPosition,
+		color: "rgba(34, 211, 238, 0.98)",
+		label: "TRACKED",
+	});
+	drawDebugMarker({
+		context,
+		position: renderedCursorPosition,
+		color: "rgba(132, 204, 22, 0.98)",
+		label: "RENDERED",
+	});
+}
+
 function mapCursorPointThroughZoomEffects({
 	x,
 	y,
@@ -1506,9 +1627,13 @@ export function applyCustomCursorEffect({
 		index,
 		smoothness,
 	});
-	const transformedPosition = mapCursorPointThroughZoomEffects({
+	const rawTrackedPosition = {
 		x: position.x * width,
 		y: position.y * height,
+	};
+	const transformedPosition = mapCursorPointThroughZoomEffects({
+		x: rawTrackedPosition.x,
+		y: rawTrackedPosition.y,
 		width,
 		height,
 		zoomEffects,
@@ -1521,6 +1646,10 @@ export function applyCustomCursorEffect({
 	const removeNativeCursor = resolveBoolean({
 		value: effectParams.removeNativeCursor,
 		fallback: true,
+	});
+	const debugOverlay = resolveBoolean({
+		value: effectParams.debugOverlay,
+		fallback: false,
 	});
 	const cleanupSize = clamp(
 		resolveNumber({ value: effectParams.cleanupSize, fallback: 130 }),
@@ -1567,7 +1696,7 @@ export function applyCustomCursorEffect({
 	const shouldDrawCursor =
 		opacity > 0.001 &&
 		!(pixelX < -size || pixelY < -size || pixelX > width + size || pixelY > height + size);
-	if (!shouldCleanup && !shouldDrawCursor) {
+	if (!shouldCleanup && !shouldDrawCursor && !debugOverlay) {
 		return source;
 	}
 
@@ -1599,6 +1728,14 @@ export function applyCustomCursorEffect({
 		});
 	}
 	if (!shouldDrawCursor) {
+		if (debugOverlay) {
+			drawCustomCursorDebugOverlay({
+				context,
+				rawTrackedPosition,
+				renderedCursorPosition: transformedPosition,
+				cleanupMask,
+			});
+		}
 		return canvas;
 	}
 	context.save();
@@ -1626,5 +1763,13 @@ export function applyCustomCursorEffect({
 		accentColor,
 	});
 	context.restore();
+	if (debugOverlay) {
+		drawCustomCursorDebugOverlay({
+			context,
+			rawTrackedPosition,
+			renderedCursorPosition: transformedPosition,
+			cleanupMask,
+		});
+	}
 	return canvas;
 }
