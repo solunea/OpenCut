@@ -694,6 +694,25 @@ function getCursorDrawOffset({
 	return { x: 0, y: 0 };
 }
 
+function getCursorCleanupOffset({
+	kind,
+	size,
+}: {
+	kind: CursorVisualKind;
+	size: number;
+}): { x: number; y: number } {
+	if (kind === "text" || kind === "crosshair" || kind === "not-allowed") {
+		return { x: 0, y: 0 };
+	}
+	if (kind === "grab" || kind === "grabbing") {
+		return { x: size * 0.02, y: size * 0.03 };
+	}
+	if (kind === "pointer") {
+		return { x: size * 0.03, y: size * 0.04 };
+	}
+	return { x: size * 0.025, y: size * 0.05 };
+}
+
 interface CursorPoint {
 	x: number;
 	y: number;
@@ -844,9 +863,9 @@ function resolveCursorCleanupTrail({
 
 	const cleanupScale = clamp(cleanupSize / 100, 0.6, 2.2);
 	const uncertaintyDistance = clamp(
-		travel * 0.28,
+		travel * 0.18,
 		0,
-		Math.max(1.2, size * cleanupScale * 0.22),
+		Math.max(1, size * cleanupScale * 0.16),
 	);
 	if (uncertaintyDistance <= 0.35) {
 		return [currentPosition];
@@ -859,10 +878,6 @@ function resolveCursorCleanupTrail({
 		{
 			x: currentPosition.x - directionX * uncertaintyDistance,
 			y: currentPosition.y - directionY * uncertaintyDistance,
-		},
-		{
-			x: currentPosition.x + directionX * uncertaintyDistance,
-			y: currentPosition.y + directionY * uncertaintyDistance,
 		},
 	]);
 }
@@ -914,9 +929,13 @@ function buildCursorCleanupMask({
 		kind,
 		size: cleanupCursorSize,
 	});
+	const cleanupOffsetBias = getCursorCleanupOffset({
+		kind,
+		size: cleanupCursorSize,
+	});
 	const translatedPositions = positions.map((position) => ({
-		x: position.x + cleanupDrawOffset.x,
-		y: position.y + cleanupDrawOffset.y,
+		x: position.x + cleanupDrawOffset.x + cleanupOffsetBias.x,
+		y: position.y + cleanupDrawOffset.y + cleanupOffsetBias.y,
 	}));
 	const extent = resolveCursorCleanupExtent({
 		kind,
