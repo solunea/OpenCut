@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type DragEvent } from "react";
+import { useEffect, useState, type DragEvent, type MouseEvent } from "react";
 import { invokeAction } from "@/lib/actions";
 import type { Effect } from "@/types/effects";
 import type { VisualElement } from "@/types/timeline";
@@ -348,8 +348,23 @@ function ClipEffectSection({
 			effectId: effect.id,
 		});
 
+	const handleToggleEffect = (event: MouseEvent<HTMLButtonElement>) => {
+		event.stopPropagation();
+		toggleEffect();
+	};
+
+	const handleRemoveEffect = (event: MouseEvent<HTMLButtonElement>) => {
+		event.stopPropagation();
+		removeEffect();
+	};
+
 	return (
-		<Section sectionKey={`clip-effect:${effect.id}`} showTopBorder={false}>
+		<Section
+			collapsible
+			defaultOpen
+			sectionKey={`clip-effect:${effect.id}`}
+			showTopBorder={false}
+		>
 			<SectionHeader
 				className="cursor-move"
 				trailing={
@@ -358,7 +373,7 @@ function ClipEffectSection({
 							variant={effect.enabled ? "secondary" : "ghost"}
 							size="icon"
 							aria-label={`Toggle ${definition.name}`}
-							onClick={toggleEffect}
+							onClick={handleToggleEffect}
 						>
 							<HugeiconsIcon
 								icon={effect.enabled ? ViewIcon : ViewOffSlashIcon}
@@ -368,7 +383,7 @@ function ClipEffectSection({
 							variant="ghost"
 							size="icon"
 							aria-label={`Remove ${definition.name}`}
-							onClick={removeEffect}
+							onClick={handleRemoveEffect}
 						>
 							<HugeiconsIcon icon={Delete02Icon} />
 						</Button>

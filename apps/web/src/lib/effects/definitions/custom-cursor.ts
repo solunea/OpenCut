@@ -45,6 +45,15 @@ export const customCursorEffectDefinition: EffectDefinition = {
 			step: 1,
 		},
 		{
+			key: "trackingSmoothness",
+			label: "Tracking",
+			type: "number",
+			default: 55,
+			min: 0,
+			max: 100,
+			step: 1,
+		},
+		{
 			key: "clickPulse",
 			label: "Click Pulse",
 			type: "boolean",

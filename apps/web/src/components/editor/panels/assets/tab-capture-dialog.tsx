@@ -241,7 +241,9 @@ export function TabCaptureDialog({
 				stream,
 				shouldHideNativeCursor,
 			});
-			await startCursorTrackingCaptureSession();
+			await startCursorTrackingCaptureSession({
+				shouldHideNativeCursor,
+			});
 			hasCursorTrackingSessionRef.current = true;
 			const mimeType = getSupportedRecorderMimeType();
 			const recorder = mimeType

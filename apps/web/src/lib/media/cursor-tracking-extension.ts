@@ -29,8 +29,10 @@ function unwrapRecordedCursorPayload(payload: unknown): unknown {
 
 async function sendBridgeRequest({
 	type,
+	payload,
 }: {
 	type: "session-start" | "session-stop-export" | "session-cancel";
+	payload?: unknown;
 }): Promise<unknown> {
 	if (typeof window === "undefined") {
 		throw new Error(buildUnavailableMessage());
@@ -83,14 +85,22 @@ async function sendBridgeRequest({
 				direction: "request",
 				requestId,
 				type,
+				payload,
 			},
 			window.location.origin,
 		);
 	});
 }
 
-export async function startCursorTrackingCaptureSession(): Promise<void> {
-	await sendBridgeRequest({ type: "session-start" });
+export async function startCursorTrackingCaptureSession({
+	shouldHideNativeCursor = false,
+}: {
+	shouldHideNativeCursor?: boolean;
+} = {}): Promise<void> {
+	await sendBridgeRequest({
+		type: "session-start",
+		payload: { shouldHideNativeCursor },
+	});
 }
 
 export async function cancelCursorTrackingCaptureSession(): Promise<void> {

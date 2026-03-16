@@ -22,12 +22,41 @@ type CursorVisualKind =
 	| "crosshair"
 	| "not-allowed";
 
+const CURSOR_SNAP_DISTANCE_THRESHOLD = 0.003;
+const CURSOR_SNAP_VELOCITY_THRESHOLD = 0.35;
+const CURSOR_HOLD_EDGE_PORTION = 0.22;
+const CURSOR_SMOOTHING_MIN = 0.18;
+const CURSOR_SMOOTHING_MAX = 0.88;
+const CURSOR_SMOOTHNESS_DEFAULT = 55;
+
 function clamp(value: number, min: number, max: number): number {
 	return Math.min(Math.max(value, min), max);
 }
 
 function lerp(leftValue: number, rightValue: number, progress: number): number {
 	return leftValue + (rightValue - leftValue) * progress;
+}
+
+function inverseLerp(value: number, min: number, max: number): number {
+	if (Math.abs(max - min) <= 0.000001) {
+		return 0;
+	}
+	return (value - min) / (max - min);
+}
+
+function resolveSmoothnessFactor({
+	effectParams,
+}: {
+	effectParams: EffectParamValues;
+}): number {
+	return clamp(
+		resolveNumber({
+			value: effectParams.trackingSmoothness,
+			fallback: CURSOR_SMOOTHNESS_DEFAULT,
+		}) / 100,
+		0,
+		1,
+	);
 }
 
 function resolveNumber({
@@ -124,10 +153,12 @@ function resolveInterpolatedPosition({
 	events,
 	time,
 	index,
+	smoothness,
 }: {
 	events: RecordedCursorEvent[];
 	time: number;
 	index: number;
+	smoothness: number;
 }): { x: number; y: number } {
 	if (events.length === 0) {
 		return { x: 0.5, y: 0.5 };
@@ -146,10 +177,48 @@ function resolveInterpolatedPosition({
 			y: leftEvent.normalizedY,
 		};
 	}
-	const progress = clamp((time - leftEvent.time) / (rightEvent.time - leftEvent.time), 0, 1);
+
+	const duration = rightEvent.time - leftEvent.time;
+	const deltaX = rightEvent.normalizedX - leftEvent.normalizedX;
+	const deltaY = rightEvent.normalizedY - leftEvent.normalizedY;
+	const distance = Math.hypot(deltaX, deltaY);
+	const velocity = distance / duration;
+	const progress = clamp((time - leftEvent.time) / duration, 0, 1);
+	const snapDistanceThreshold = lerp(0.0012, 0.0045, 1 - smoothness);
+	const snapVelocityThreshold = lerp(0.12, 0.65, 1 - smoothness);
+	const holdEdgePortion = lerp(0.08, 0.3, 1 - smoothness);
+
+	if (
+		distance <= snapDistanceThreshold ||
+		velocity <= snapVelocityThreshold
+	) {
+		const snapProgress = progress < 0.5 ? 0 : 1;
+		return {
+			x: lerp(leftEvent.normalizedX, rightEvent.normalizedX, snapProgress),
+			y: lerp(leftEvent.normalizedY, rightEvent.normalizedY, snapProgress),
+		};
+	}
+
+	const heldProgress = clamp(
+		inverseLerp(progress, holdEdgePortion, 1 - holdEdgePortion),
+		0,
+		1,
+	);
+	const smoothingStrength = clamp(
+		inverseLerp(velocity, snapVelocityThreshold, 2.4),
+		0,
+		1,
+	);
+	const smoothingMin = lerp(0.9, CURSOR_SMOOTHING_MIN, smoothness);
+	const smoothingMax = lerp(1, CURSOR_SMOOTHING_MAX, smoothness);
+	const smoothedProgress = lerp(
+		heldProgress,
+		progress,
+		lerp(smoothingMin, smoothingMax, smoothingStrength),
+	);
 	return {
-		x: lerp(leftEvent.normalizedX, rightEvent.normalizedX, progress),
-		y: lerp(leftEvent.normalizedY, rightEvent.normalizedY, progress),
+		x: lerp(leftEvent.normalizedX, rightEvent.normalizedX, smoothedProgress),
+		y: lerp(leftEvent.normalizedY, rightEvent.normalizedY, smoothedProgress),
 	};
 }
 
@@ -648,10 +717,12 @@ export function applyCustomCursorEffect({
 		return source;
 	}
 
+	const smoothness = resolveSmoothnessFactor({ effectParams });
 	const position = resolveInterpolatedPosition({
 		events,
 		time: sourceTime,
 		index,
+		smoothness,
 	});
 	let pixelX = position.x * width;
 	let pixelY = position.y * height;

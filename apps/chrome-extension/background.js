@@ -52,11 +52,12 @@ async function injectTrackerIntoTab({ tabId }) {
 	}
 }
 
-async function sendTabMessage({ tabId, type, allowInject = false }) {
+async function sendTabMessage({ tabId, type, payload, allowInject = false }) {
 	try {
 		return await chrome.tabs.sendMessage(tabId, {
 			namespace: MESSAGE_NAMESPACE,
 			type,
+			payload,
 		});
 	} catch {
 		if (!allowInject) {
@@ -70,6 +71,7 @@ async function sendTabMessage({ tabId, type, allowInject = false }) {
 			return await chrome.tabs.sendMessage(tabId, {
 				namespace: MESSAGE_NAMESPACE,
 				type,
+				payload,
 			});
 		} catch {
 			return null;
@@ -103,7 +105,11 @@ async function resolveSessionTabs({ controllerTabId, controllerWindowId }) {
 	return await getTrackableTabs({ controllerTabId, controllerWindowId });
 }
 
-async function startSession({ controllerTabId, controllerWindowId }) {
+async function startSession({
+	controllerTabId,
+	controllerWindowId,
+	shouldHideNativeCursor = false,
+}) {
 	const tabs = await getTrackableTabs({ controllerTabId, controllerWindowId });
 	const startedTabIds = [];
 
@@ -111,6 +117,7 @@ async function startSession({ controllerTabId, controllerWindowId }) {
 		const response = await sendTabMessage({
 			tabId: tab.id,
 			type: "start",
+			payload: { shouldHideNativeCursor },
 			allowInject: true,
 		});
 		if (response?.ok) {
@@ -129,6 +136,7 @@ async function startSession({ controllerTabId, controllerWindowId }) {
 	sessions.set(controllerTabId, {
 		controllerWindowId,
 		startedTabIds,
+		shouldHideNativeCursor,
 	});
 
 	return { startedCount: startedTabIds.length, candidateCount: tabs.length };
@@ -202,7 +210,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 	const handleMessage = async () => {
 		if (message.type === "session-start") {
-			return await startSession({ controllerTabId, controllerWindowId });
+			return await startSession({
+				controllerTabId,
+				controllerWindowId,
+				shouldHideNativeCursor: Boolean(message.payload?.shouldHideNativeCursor),
+			});
 		}
 		if (message.type === "session-stop-export") {
 			return await stopAndExportSession({ controllerTabId, controllerWindowId });
