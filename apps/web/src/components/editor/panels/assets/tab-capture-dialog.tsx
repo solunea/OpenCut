@@ -206,7 +206,7 @@ export function TabCaptureDialog({
 		try {
 			const videoConstraints: DisplayMediaVideoConstraints = {
 				frameRate: 30,
-				cursor: "always",
+				cursor: "never",
 			};
 			const stream = await navigator.mediaDevices.getDisplayMedia({
 				video: videoConstraints,

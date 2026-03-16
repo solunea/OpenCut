@@ -8,6 +8,7 @@
 	const MAX_EVENT_COUNT = 20000;
 	const MAX_MOVE_SAMPLE_RATE_MS = 16;
 	const MIN_MOVE_DISTANCE = 0.0015;
+	const CURSOR_STATE_SAMPLE_RATE_MS = 120;
 	const MESSAGE_NAMESPACE = "opencut-cursor";
 	const PAGE_BRIDGE_NAMESPACE = "opencut-cursor-bridge";
 
@@ -17,6 +18,7 @@
 		startedAtPerf: 0,
 		events: [],
 		lastPointer: null,
+		lastButtons: 0,
 		lastMoveAt: 0,
 		lastMoveX: null,
 		lastMoveY: null,
@@ -67,6 +69,7 @@
 		state.startedAtPerf = performance.now();
 		state.events = [];
 		state.lastPointer = null;
+		state.lastButtons = 0;
 		state.lastMoveAt = 0;
 		state.lastMoveX = null;
 		state.lastMoveY = null;
@@ -83,6 +86,7 @@
 		deltaY,
 		scrollX,
 		scrollY,
+		force,
 	}) {
 		if (!state.isTracking || !state.startedAt) {
 			return;
@@ -106,7 +110,7 @@
 			viewport.viewportHeight,
 		);
 
-		if (type === "move") {
+		if (type === "move" && !force) {
 			const now = performance.now();
 			const distance =
 				state.lastMoveX === null || state.lastMoveY === null
@@ -127,6 +131,8 @@
 		}
 
 		const resolvedCursor = cursor || state.lastPointer?.cursor || "default";
+		const resolvedButtons =
+			typeof buttons === "number" ? buttons : state.lastButtons;
 		const event = {
 			time: getRelativeTimeSeconds(),
 			type,
@@ -136,7 +142,7 @@
 			normalizedY: position.normalizedY,
 			cursor: resolvedCursor,
 			button,
-			buttons,
+			buttons: resolvedButtons,
 			deltaX,
 			deltaY,
 			scrollX,
@@ -156,6 +162,7 @@
 			y: safeY,
 			cursor: resolvedCursor,
 		};
+		state.lastButtons = resolvedButtons;
 	}
 
 	function buildCursorTracking() {
@@ -305,6 +312,27 @@
 		},
 		{ capture: true, passive: true },
 	);
+
+	window.setInterval(() => {
+		if (!state.isTracking || !state.lastPointer) {
+			return;
+		}
+
+		const target = document.elementFromPoint(state.lastPointer.x, state.lastPointer.y);
+		const cursor = getCursor(target);
+		if (cursor === state.lastPointer.cursor) {
+			return;
+		}
+
+		recordEvent({
+			type: "move",
+			x: state.lastPointer.x,
+			y: state.lastPointer.y,
+			cursor,
+			buttons: state.lastButtons,
+			force: true,
+		});
+	}, CURSOR_STATE_SAMPLE_RATE_MS);
 
 	window.addEventListener("message", (event) => {
 		if (event.source !== window || event.origin !== window.location.origin) {

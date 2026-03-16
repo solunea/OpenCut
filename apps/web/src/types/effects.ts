@@ -78,7 +78,11 @@ export interface WebGLEffectRenderer {
 	passes: WebGLEffectPass[];
 }
 
-export type EffectRenderer = WebGLEffectRenderer;
+export interface CustomEffectRenderer {
+	type: "custom";
+}
+
+export type EffectRenderer = WebGLEffectRenderer | CustomEffectRenderer;
 
 export interface EffectDefinition {
 	type: string;

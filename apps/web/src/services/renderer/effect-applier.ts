@@ -4,8 +4,7 @@ import type { EffectParamValues, ZoomEffectTransition } from "@/types/effects";
 import { createOffscreenCanvas } from "./canvas-utils";
 import { webglEffectRenderer } from "./webgl-effect-renderer";
 
-function applyZoomCpuEffect({
-	source,
+function resolveZoomGeometry({
 	width,
 	height,
 	effectParams,
@@ -13,23 +12,13 @@ function applyZoomCpuEffect({
 	duration,
 	zoomTransition,
 }: {
-	source: CanvasImageSource;
 	width: number;
 	height: number;
 	effectParams: EffectParamValues;
 	progress: number;
 	duration?: number;
 	zoomTransition?: ZoomEffectTransition;
-}): CanvasImageSource {
-	const canvas = createOffscreenCanvas({ width, height });
-	const context = canvas.getContext("2d") as
-		| CanvasRenderingContext2D
-		| OffscreenCanvasRenderingContext2D
-		| null;
-	if (!context) {
-		return source;
-	}
-
+}) {
 	const renderState = resolveZoomRenderState({
 		effectParams,
 		progress,
@@ -61,6 +50,95 @@ function applyZoomCpuEffect({
 	const matrixB = sinRotation * scaleX + shearY;
 	const matrixC = cosRotation * shearX - sinRotation * scaleY;
 	const matrixD = sinRotation * shearX + cosRotation * scaleY;
+	const translateX = centerX - matrixA * centerX - matrixC * centerY;
+	const translateY = centerY - matrixB * centerX - matrixD * centerY;
+
+	return {
+		renderState,
+		scale,
+		focusPixelX,
+		focusPixelY,
+		matrixA,
+		matrixB,
+		matrixC,
+		matrixD,
+		translateX,
+		translateY,
+	};
+}
+
+export function mapPointThroughZoomEffect({
+	x,
+	y,
+	width,
+	height,
+	effectParams,
+	progress,
+	duration,
+	zoomTransition,
+}: {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	effectParams: EffectParamValues;
+	progress: number;
+	duration?: number;
+	zoomTransition?: ZoomEffectTransition;
+}): { x: number; y: number } {
+	const geometry = resolveZoomGeometry({
+		width,
+		height,
+		effectParams,
+		progress,
+		duration,
+		zoomTransition,
+	});
+	const zoomedX =
+		geometry.focusPixelX + (x - geometry.focusPixelX) * geometry.scale;
+	const zoomedY =
+		geometry.focusPixelY + (y - geometry.focusPixelY) * geometry.scale;
+
+	return {
+		x: geometry.matrixA * zoomedX + geometry.matrixC * zoomedY + geometry.translateX,
+		y: geometry.matrixB * zoomedX + geometry.matrixD * zoomedY + geometry.translateY,
+	};
+}
+
+function applyZoomCpuEffect({
+	source,
+	width,
+	height,
+	effectParams,
+	progress,
+	duration,
+	zoomTransition,
+}: {
+	source: CanvasImageSource;
+	width: number;
+	height: number;
+	effectParams: EffectParamValues;
+	progress: number;
+	duration?: number;
+	zoomTransition?: ZoomEffectTransition;
+}): CanvasImageSource {
+	const canvas = createOffscreenCanvas({ width, height });
+	const context = canvas.getContext("2d") as
+		| CanvasRenderingContext2D
+		| OffscreenCanvasRenderingContext2D
+		| null;
+	if (!context) {
+		return source;
+	}
+
+	const geometry = resolveZoomGeometry({
+		width,
+		height,
+		effectParams,
+		progress,
+		duration,
+		zoomTransition,
+	});
 
 	const zoomCanvas = createOffscreenCanvas({ width, height });
 	const zoomContext = zoomCanvas.getContext("2d") as
@@ -74,10 +152,10 @@ function applyZoomCpuEffect({
 	zoomContext.imageSmoothingEnabled = true;
 	zoomContext.drawImage(
 		source,
-		focusPixelX - focusPixelX / scale,
-		focusPixelY - focusPixelY / scale,
-		width / scale,
-		height / scale,
+		geometry.focusPixelX - geometry.focusPixelX / geometry.scale,
+		geometry.focusPixelY - geometry.focusPixelY / geometry.scale,
+		width / geometry.scale,
+		height / geometry.scale,
 		0,
 		0,
 		width,
@@ -87,17 +165,17 @@ function applyZoomCpuEffect({
 	context.imageSmoothingEnabled = true;
 	context.save();
 	context.setTransform(
-		matrixA,
-		matrixB,
-		matrixC,
-		matrixD,
-		centerX - matrixA * centerX - matrixC * centerY,
-		centerY - matrixB * centerX - matrixD * centerY,
+		geometry.matrixA,
+		geometry.matrixB,
+		geometry.matrixC,
+		geometry.matrixD,
+		geometry.translateX,
+		geometry.translateY,
 	);
 	context.drawImage(zoomCanvas, 0, 0, width, height);
 	context.restore();
 
-	if (renderState.keepFrameFixed) {
+	if (geometry.renderState.keepFrameFixed) {
 		const baseCanvas = createOffscreenCanvas({ width, height });
 		const baseCtx = baseCanvas.getContext("2d") as
 			| CanvasRenderingContext2D
@@ -160,27 +238,30 @@ export function applyRendererEffect({
 	zoomTransition?: ZoomEffectTransition;
 }): CanvasImageSource {
 	const definition = getEffect({ effectType });
-	const passes = definition.renderer.passes.map((pass) => ({
-		fragmentShader: pass.fragmentShader,
-		uniforms: pass.uniforms({
-			effectParams,
+
+	if (definition.renderer.type === "webgl") {
+		const passes = definition.renderer.passes.map((pass) => ({
+			fragmentShader: pass.fragmentShader,
+			uniforms: pass.uniforms({
+				effectParams,
+				width,
+				height,
+				localTime,
+				duration,
+				progress,
+				zoomTransition,
+			}),
+		}));
+
+		const webglResult = webglEffectRenderer.applyEffectOrNull({
+			source,
 			width,
 			height,
-			localTime,
-			duration,
-			progress,
-			zoomTransition,
-		}),
-	}));
-
-	const webglResult = webglEffectRenderer.applyEffectOrNull({
-		source,
-		width,
-		height,
-		passes,
-	});
-	if (webglResult) {
-		return webglResult;
+			passes,
+		});
+		if (webglResult) {
+			return webglResult;
+		}
 	}
 
 	if (effectType === "zoom") {

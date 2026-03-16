@@ -155,6 +155,7 @@ function buildTrackNodes({
 							mediaId: mediaAsset.id,
 							url: mediaAsset.url,
 							file: mediaAsset.file,
+							recordedCursor: mediaAsset.recordedCursor,
 							duration: videoElement.duration,
 							timeOffset: videoElement.startTime,
 							trimStart: videoElement.trimStart,

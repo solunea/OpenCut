@@ -1,7 +1,12 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { createOffscreenCanvas } from "../canvas-utils";
+import {
+	applyCustomCursorEffect,
+	type AppliedZoomEffect,
+} from "../custom-cursor-effect";
 import { BaseNode } from "./base-node";
 import type { Effect } from "@/types/effects";
+import type { RecordedCursorData } from "@/types/cursor-tracking";
 import type { BlendMode } from "@/types/rendering";
 import type { Transform, VideoFrameStyle } from "@/types/timeline";
 import type { ElementAnimations } from "@/types/animation";
@@ -15,7 +20,6 @@ import {
 	getClampedVideoSourceTimeFromTimelineTime,
 	getSourceTimeFromTimelineTime,
 	getVisibleTimelineDuration,
-	normalizePlaybackRate,
 } from "@/lib/timeline/clip-speed";
 import { resolveEffectParamsAtTime } from "@/lib/animation/effect-param-channel";
 import { TIME_EPSILON_SECONDS } from "@/constants/animation-constants";
@@ -352,6 +356,7 @@ export interface VisualNodeParams {
 	blendMode?: BlendMode;
 	frameStyle?: VideoFrameStyle;
 	effects?: Effect[];
+	recordedCursor?: RecordedCursorData;
 }
 
 export abstract class VisualNode<
@@ -424,6 +429,7 @@ export abstract class VisualNode<
 		renderer.context.save();
 
 		const animationLocalTime = this.getAnimationLocalTime({ time: timelineTime });
+		const sourceLocalTime = this.getSourceLocalTime({ time: timelineTime });
 		const transform = resolveTransformAtTime({
 			baseTransform: this.params.transform,
 			animations: this.params.animations,
@@ -500,6 +506,7 @@ export abstract class VisualNode<
 		let currentResult: CanvasImageSource = elementCanvas;
 		let hasAppliedRoundedMask = false;
 		let hasKeepFrameFixedZoom = false;
+		const appliedZoomEffects: AppliedZoomEffect[] = [];
 
 		for (const effect of enabledEffects) {
 			const resolvedParams = resolveEffectParamsAtTime({
@@ -517,8 +524,8 @@ export abstract class VisualNode<
 			});
 			const shouldSkipEffectForBackgroundBlur =
 				renderer.renderLayer === "backgroundBlur" &&
-				effect.type === "zoom" &&
-				keepFrameFixed;
+				((effect.type === "zoom" && keepFrameFixed) ||
+					effect.type === "custom-cursor");
 
 			if (shouldSkipEffectForBackgroundBlur) {
 				continue;
@@ -542,6 +549,19 @@ export abstract class VisualNode<
 				hasAppliedRoundedMask = true;
 			}
 
+			if (effect.type === "custom-cursor") {
+				currentResult = applyCustomCursorEffect({
+					source: currentResult,
+					width: pixelWidth,
+					height: pixelHeight,
+					sourceTime: sourceLocalTime,
+					effectParams: resolvedParams,
+					recordedCursor: this.params.recordedCursor,
+					zoomEffects: appliedZoomEffects,
+				});
+				continue;
+			}
+
 			currentResult = applyRendererEffect({
 				source: currentResult,
 				width: pixelWidth,
@@ -552,6 +572,14 @@ export abstract class VisualNode<
 				duration: this.params.duration,
 				progress,
 			});
+
+			if (effect.type === "zoom") {
+				appliedZoomEffects.push({
+					effectParams: resolvedParams,
+					progress,
+					duration: this.params.duration,
+				});
+			}
 		}
 
 		const finalResult = hasAppliedRoundedMask
