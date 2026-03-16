@@ -42,7 +42,7 @@ import { useFileUpload } from "@/hooks/use-file-upload";
 import { useRevealItem } from "@/hooks/use-reveal-item";
 import { invokeAction } from "@/lib/actions";
 import { processMediaAssets } from "@/lib/media/processing";
-import { buildElementFromMedia } from "@/lib/timeline/element-utils";
+import { buildElementFromMedia, hasMediaId } from "@/lib/timeline/element-utils";
 import { TabCaptureDialog } from "@/components/editor/panels/assets/tab-capture-dialog";
 import {
 	type MediaSortKey,
@@ -203,6 +203,24 @@ export function MediaView() {
 		if (!updatedAsset) {
 			toast.error("Failed to rename file");
 			return;
+		}
+
+		const timelineElementUpdates = editor.timeline
+			.getTracks()
+			.flatMap((track) =>
+				track.elements
+					.filter((element) => hasMediaId(element) && element.mediaId === id)
+					.map((element) => ({
+						trackId: track.id,
+						elementId: element.id,
+						updates: { name: trimmedName },
+					})),
+			);
+
+		if (timelineElementUpdates.length > 0) {
+			editor.timeline.updateElements({
+				updates: timelineElementUpdates,
+			});
 		}
 
 		toast.success("File renamed");
