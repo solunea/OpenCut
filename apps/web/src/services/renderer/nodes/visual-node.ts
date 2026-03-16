@@ -8,7 +8,11 @@ import { BaseNode } from "./base-node";
 import type { Effect } from "@/types/effects";
 import type { RecordedCursorData } from "@/types/cursor-tracking";
 import type { BlendMode } from "@/types/rendering";
-import type { Transform, VideoFrameStyle } from "@/types/timeline";
+import type {
+	MediaKeyframeEasing,
+	Transform,
+	VideoFrameStyle,
+} from "@/types/timeline";
 import type { ElementAnimations } from "@/types/animation";
 import {
 	getElementLocalTime,
@@ -352,6 +356,7 @@ export interface VisualNodeParams {
 	freezeFrameEnd?: number;
 	transform: Transform;
 	animations?: ElementAnimations;
+	keyframeEasing?: MediaKeyframeEasing;
 	opacity: number;
 	blendMode?: BlendMode;
 	frameStyle?: VideoFrameStyle;
@@ -434,11 +439,13 @@ export abstract class VisualNode<
 			baseTransform: this.params.transform,
 			animations: this.params.animations,
 			localTime: animationLocalTime,
+			keyframeEasing: this.params.keyframeEasing,
 		});
 		const opacity = resolveOpacityAtTime({
 			baseOpacity: this.params.opacity,
 			animations: this.params.animations,
 			localTime: animationLocalTime,
+			keyframeEasing: this.params.keyframeEasing,
 		});
 		const containScale = Math.min(
 			renderer.width / sourceWidth,

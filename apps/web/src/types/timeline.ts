@@ -9,6 +9,12 @@ export interface Bookmark {
 	duration?: number;
 }
 
+export type MediaKeyframeEasing =
+	| "linear"
+	| "ease-in"
+	| "ease-out"
+	| "ease-in-out";
+
 export interface TScene {
 	id: string;
 	name: string;
@@ -67,7 +73,11 @@ export type TimelineTrack =
 
 export type { Transform } from "./rendering";
 
-interface BaseAudioElement extends BaseTimelineElement {
+interface BaseMediaElement extends BaseTimelineElement {
+	keyframeEasing?: MediaKeyframeEasing;
+}
+
+interface BaseAudioElement extends BaseMediaElement {
 	type: "audio";
 	volume: number;
 	playbackRate?: number;
@@ -107,7 +117,7 @@ export interface VideoFrameStyle {
 	shadowColor?: string;
 }
 
-export interface VideoElement extends BaseTimelineElement {
+export interface VideoElement extends BaseMediaElement {
 	type: "video";
 	mediaId: string;
 	playbackRate?: number;
@@ -122,7 +132,7 @@ export interface VideoElement extends BaseTimelineElement {
 	effects?: Effect[];
 }
 
-export interface ImageElement extends BaseTimelineElement {
+export interface ImageElement extends BaseMediaElement {
 	type: "image";
 	mediaId: string;
 	hidden?: boolean;
@@ -206,11 +216,14 @@ export type VisualElement =
 	| TextElement
 	| StickerElement;
 
+export type MediaElement = AudioElement | VideoElement | ImageElement;
+
 export type ElementUpdatePatch =
 	| { transform: Transform }
 	| { opacity: number }
 	| { volume: number }
-	| { playbackRate: number };
+	| { playbackRate: number }
+	| { keyframeEasing: MediaKeyframeEasing };
 
 export type TimelineElement =
 	| AudioElement

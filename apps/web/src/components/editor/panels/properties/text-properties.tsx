@@ -17,6 +17,7 @@ import {
 } from "./section";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { uppercase } from "@/utils/string";
 import { clamp } from "@/utils/math";
 import { useEditor } from "@/hooks/use-editor";
@@ -42,12 +43,15 @@ import { isPropertyAtDefault } from "./sections/transform";
 import { resolveColorAtTime, resolveNumberAtTime } from "@/lib/animation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  AlignLeftIcon,
+  AlignRightIcon,
   TextFontIcon,
   ViewIcon,
   ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons";
 import { OcTextHeightIcon, OcTextWidthIcon } from "@opencut/ui/icons";
 import { cn } from "@/utils/ui";
+import { AlignCenter } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -75,6 +79,28 @@ const TEXT_ANIMATION_GRANULARITY_OPTIONS: Array<{
   { value: "whole", label: "Entier" },
   { value: "word", label: "Mot" },
   { value: "character", label: "Caractère" },
+];
+
+const TEXT_ALIGN_OPTIONS: Array<{
+  value: TextElement["textAlign"];
+  label: string;
+  icon: React.ReactNode;
+}> = [
+  {
+    value: "left",
+    label: "Align left",
+    icon: <HugeiconsIcon icon={AlignLeftIcon} className="size-4" />,
+  },
+  {
+    value: "center",
+    label: "Align center",
+    icon: <AlignCenter className="size-4" />,
+  },
+  {
+    value: "right",
+    label: "Align right",
+    icon: <HugeiconsIcon icon={AlignRightIcon} className="size-4" />,
+  },
 ];
 
 export function TextProperties({
@@ -230,6 +256,42 @@ function TypographySection({
               isDefault={element.fontSize === DEFAULT_TEXT_ELEMENT.fontSize}
               icon={<HugeiconsIcon icon={TextFontIcon} />}
             />
+          </SectionField>
+          <SectionField label="Align">
+            <ToggleGroup
+              type="single"
+              value={element.textAlign}
+              className="w-full justify-start"
+              variant="outline"
+              size="sm"
+              onValueChange={(value) => {
+                if (!value) return;
+
+                editor.timeline.updateElements({
+                  updates: [
+                    {
+                      trackId,
+                      elementId: element.id,
+                      updates: {
+                        textAlign: value as TextElement["textAlign"],
+                      },
+                    },
+                  ],
+                });
+              }}
+            >
+              {TEXT_ALIGN_OPTIONS.map((option) => (
+                <ToggleGroupItem
+                  key={option.value}
+                  value={option.value}
+                  aria-label={option.label}
+                  title={option.label}
+                  className="flex-1"
+                >
+                  {option.icon}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
           </SectionField>
           <SectionField
             label="Color"

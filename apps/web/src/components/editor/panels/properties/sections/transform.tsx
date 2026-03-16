@@ -71,10 +71,14 @@ export function TransformSection({
 		elementDuration: element.duration,
 	});
 	const resolvedTransform = resolveTransformAtTime({
-		baseTransform: element.transform,
-		animations: element.animations,
-		localTime,
-	});
+baseTransform: element.transform,
+animations: element.animations,
+localTime,
+keyframeEasing:
+element.type === "video" || element.type === "image"
+? element.keyframeEasing
+: undefined,
+});
 	const isPlayheadWithinElementRange =
 		playheadTime >= element.startTime - TIME_EPSILON_SECONDS &&
 		playheadTime <= element.startTime + element.duration + TIME_EPSILON_SECONDS;

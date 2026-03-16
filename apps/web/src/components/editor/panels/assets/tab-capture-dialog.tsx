@@ -105,7 +105,7 @@ export function TabCaptureDialog({
 	onOpenChange,
 }: TabCaptureDialogProps) {
 	const [captureState, setCaptureState] = useState<CaptureState>("idle");
-	const [shouldHideNativeCursor, setShouldHideNativeCursor] = useState(true);
+	const [shouldHideNativeCursor, setShouldHideNativeCursor] = useState(false);
 	const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const recorderRef = useRef<MediaRecorder | null>(null);
@@ -113,6 +113,7 @@ export function TabCaptureDialog({
 	const chunksRef = useRef<Blob[]>([]);
 	const mimeTypeRef = useRef<string>("video/webm");
 	const hasCursorTrackingSessionRef = useRef(false);
+	const audioContextRef = useRef<AudioContext | null>(null);
 
 	useEffect(() => {
 		const video = videoRef.current;
@@ -133,6 +134,8 @@ export function TabCaptureDialog({
 
 	useEffect(() => {
 		return () => {
+			void audioContextRef.current?.close().catch(() => undefined);
+			audioContextRef.current = null;
 			stopStream(streamRef.current);
 			if (hasCursorTrackingSessionRef.current) {
 				void cancelCursorTrackingCaptureSession();
@@ -152,6 +155,8 @@ export function TabCaptureDialog({
 	const resetCapture = () => {
 		chunksRef.current = [];
 		recorderRef.current = null;
+		void audioContextRef.current?.close().catch(() => undefined);
+		audioContextRef.current = null;
 		stopStream(streamRef.current);
 		streamRef.current = null;
 		setPreviewStream(null);
@@ -271,6 +276,14 @@ export function TabCaptureDialog({
 			setPreviewStream(stream);
 			setCaptureState("recording");
 
+			if (stream.getAudioTracks().length > 0 && typeof AudioContext !== "undefined") {
+				const audioContext = new AudioContext();
+				const source = audioContext.createMediaStreamSource(stream);
+				source.connect(audioContext.destination);
+				audioContextRef.current = audioContext;
+				void audioContext.resume().catch(() => undefined);
+			}
+
 			recorder.addEventListener("dataavailable", (event) => {
 				if (event.data.size > 0) {
 					chunksRef.current.push(event.data);
@@ -303,7 +316,7 @@ export function TabCaptureDialog({
 	};
 
 	const handleOpenChange = (open: boolean) => {
-		if (!open && captureState !== "idle") {
+		if (!open && (captureState === "recording" || captureState === "finalizing")) {
 			return;
 		}
 
@@ -341,7 +354,7 @@ export function TabCaptureDialog({
 							) : (
 								<div className="text-muted-foreground flex max-w-sm flex-col items-center gap-2 px-6 text-center text-sm">
 									<span>Record a browser tab and import the resulting clip directly into your media library.</span>
-									<span>The browser picker will still let you choose the exact tab.</span>
+									<span>The browser picker will let you choose the exact tab.</span>
 									<span>The OpenCut Cursor Tracker extension will record cursor events in parallel and attach them automatically.</span>
 								</div>
 							)}

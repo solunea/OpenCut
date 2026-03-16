@@ -99,6 +99,21 @@ describe("transform keyframe evaluation", () => {
 		expect(value).toBe(10);
 	});
 
+	test("applies media easing to interpolated values", () => {
+		const value = getChannelValueAtTime({
+			channel: {
+				valueKind: "number",
+				keyframes: [
+					{ id: "a", time: 0, value: 0, interpolation: "linear" },
+					{ id: "b", time: 1, value: 1, interpolation: "linear" },
+				],
+			},
+			time: 0.5,
+			fallbackValue: 0,
+			easing: "ease-in",
+		});
+		expect(value).toBeCloseTo(0.125, 4);
+	});
 	test("resolves transform by mixing animated and fallback properties", () => {
 		const animations: ElementAnimations = {
 			channels: {

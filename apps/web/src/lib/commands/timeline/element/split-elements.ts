@@ -2,7 +2,7 @@ import { Command } from "@/lib/commands/base-command";
 import type { TimelineTrack } from "@/types/timeline";
 import { generateUUID } from "@/utils/id";
 import { EditorCore } from "@/core";
-import { rippleShiftElements } from "@/lib/timeline";
+import { isMediaElement, rippleShiftElements } from "@/lib/timeline";
 import { splitAnimationsAtTime } from "@/lib/animation";
 import { normalizePlaybackRate } from "@/lib/timeline/clip-speed";
 
@@ -86,6 +86,9 @@ export class SplitElementsCommand extends Command {
 					animations: element.animations,
 					splitTime: relativeTime,
 					shouldIncludeSplitBoundary: true,
+					keyframeEasing: isMediaElement(element)
+						? element.keyframeEasing
+						: undefined,
 				});
 
 				if (this.retainSide === "left") {

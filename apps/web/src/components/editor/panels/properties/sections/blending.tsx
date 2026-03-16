@@ -17,7 +17,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import type { BlendMode } from "@/types/rendering";
-import type { ElementType } from "@/types/timeline";
+import type { ElementType, MediaKeyframeEasing } from "@/types/timeline";
 import type { ElementAnimations } from "@/types/animation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { RainDropIcon } from "@hugeicons/core-free-icons";
@@ -35,6 +35,7 @@ type BlendingElement = {
 	startTime: number;
 	duration: number;
 	animations?: ElementAnimations;
+	keyframeEasing?: MediaKeyframeEasing;
 };
 
 const BLEND_MODE_GROUPS = [
@@ -118,10 +119,14 @@ export function BlendingSection({
 		duration: element.duration,
 	});
 	const resolvedOpacity = resolveOpacityAtTime({
-		baseOpacity: element.opacity,
-		animations: element.animations,
-		localTime,
-	});
+baseOpacity: element.opacity,
+animations: element.animations,
+localTime,
+keyframeEasing:
+element.type === "video" || element.type === "image"
+? element.keyframeEasing
+: undefined,
+});
 
 	const opacity = useKeyframedNumberProperty({
 		trackId,

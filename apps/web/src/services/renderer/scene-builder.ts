@@ -165,6 +165,7 @@ function buildTrackNodes({
 							freezeFrameEnd: videoElement.freezeFrameEnd,
 							transform: videoElement.transform,
 							animations: videoElement.animations,
+							keyframeEasing: videoElement.keyframeEasing,
 							opacity: videoElement.opacity,
 							blendMode: videoElement.blendMode,
 							frameStyle:
@@ -183,6 +184,7 @@ function buildTrackNodes({
 							trimEnd: element.trimEnd,
 							transform: element.transform,
 							animations: element.animations,
+							keyframeEasing: element.keyframeEasing,
 							opacity: element.opacity,
 							blendMode: element.blendMode,
 							effects: element.effects,
@@ -208,6 +210,7 @@ function buildTrackNodes({
 									: mediaAsset.duration,
 							transform: element.transform,
 							animations: element.animations,
+							keyframeEasing: element.keyframeEasing,
 							opacity: element.opacity,
 							blendMode: element.blendMode,
 							effects: element.effects,

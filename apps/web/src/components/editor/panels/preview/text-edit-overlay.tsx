@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useEditor } from "@/hooks/use-editor";
 import type { TextElement } from "@/types/timeline";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
 	positionToOverlay,
 	getDisplayScale,
@@ -11,9 +12,57 @@ import {
 	DEFAULT_LINE_HEIGHT,
 	FONT_SIZE_SCALE_REFERENCE,
 } from "@/constants/text-constants";
+import {
+	AlignLeftIcon,
+	AlignRightIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { AlignCenter } from "lucide-react";
 
 const TEXT_BACKGROUND_PADDING = "4px 8px";
 const TEXT_EDIT_VERTICAL_OFFSET_EM = 0.06;
+
+const TEXT_ALIGN_OPTIONS: Array<{
+	value: TextElement["textAlign"];
+	label: string;
+	icon: React.ReactNode;
+}> = [
+	{
+		value: "left",
+		label: "Align left",
+		icon: <HugeiconsIcon icon={AlignLeftIcon} className="size-4" />,
+	},
+	{
+		value: "center",
+		label: "Align center",
+		icon: <AlignCenter className="size-4" />,
+	},
+	{
+		value: "right",
+		label: "Align right",
+		icon: <HugeiconsIcon icon={AlignRightIcon} className="size-4" />,
+	},
+];
+
+function getOverlayHorizontalTransform({
+	textAlign,
+}: {
+	textAlign: TextElement["textAlign"];
+}) {
+	if (textAlign === "left") return "0%";
+	if (textAlign === "right") return "-100%";
+	return "-50%";
+}
+
+function getOverlayTransformOrigin({
+	textAlign,
+}: {
+	textAlign: TextElement["textAlign"];
+}) {
+	if (textAlign === "left") return "left center";
+	if (textAlign === "right") return "right center";
+	return "center center";
+}
 
 export function TextEditOverlay({
 	canvasRef,
@@ -34,6 +83,9 @@ export function TextEditOverlay({
 }) {
 	const editor = useEditor();
 	const divRef = useRef<HTMLDivElement>(null);
+	const [textAlign, setTextAlign] = useState<TextElement["textAlign"]>(
+		element.textAlign,
+	);
 
 	useEffect(() => {
 		const div = divRef.current;
@@ -45,6 +97,10 @@ export function TextEditOverlay({
 		selection?.removeAllRanges();
 		selection?.addRange(range);
 	}, []);
+
+	useEffect(() => {
+		setTextAlign(element.textAlign);
+	}, [element.textAlign]);
 
 	const handleInput = useCallback(() => {
 		const div = divRef.current;
@@ -65,6 +121,22 @@ export function TextEditOverlay({
 			}
 		},
 		[onCancel],
+	);
+
+	const handleTextAlignChange = useCallback(
+		(value: string) => {
+			if (!value) return;
+
+			const nextTextAlign = value as TextElement["textAlign"];
+			setTextAlign(nextTextAlign);
+			editor.timeline.previewElements({
+				updates: [{ trackId, elementId, updates: { textAlign: nextTextAlign } }],
+			});
+			requestAnimationFrame(() => {
+				divRef.current?.focus();
+			});
+		},
+		[editor.timeline, trackId, elementId],
 	);
 
 	const canvasRect = canvasRef.current?.getBoundingClientRect();
@@ -105,6 +177,12 @@ export function TextEditOverlay({
 	const backgroundColor = shouldShowBackground
 		? element.background.color
 		: "transparent";
+	const translateX = getOverlayHorizontalTransform({
+		textAlign,
+	});
+	const transformOrigin = getOverlayTransformOrigin({
+		textAlign,
+	});
 
 	return (
 		<div
@@ -112,10 +190,32 @@ export function TextEditOverlay({
 			style={{
 				left: posX,
 				top: posY - verticalAlignmentOffset,
-				transform: `translate(-50%, -50%) scale(${element.transform.scale}) rotate(${element.transform.rotate}deg)`,
-				transformOrigin: "center center",
+				transform: `translate(${translateX}, -50%) scale(${element.transform.scale}) rotate(${element.transform.rotate}deg)`,
+				transformOrigin,
 			}}
 		>
+			<div className="mb-2 flex justify-center">
+				<ToggleGroup
+					type="single"
+					value={textAlign}
+					variant="outline"
+					size="sm"
+					className="rounded-md bg-background/90 p-1 shadow-sm backdrop-blur"
+					onMouseDown={(event) => event.preventDefault()}
+					onValueChange={handleTextAlignChange}
+				>
+					{TEXT_ALIGN_OPTIONS.map((option) => (
+						<ToggleGroupItem
+							key={option.value}
+							value={option.value}
+							aria-label={option.label}
+							title={option.label}
+						>
+							{option.icon}
+						</ToggleGroupItem>
+					))}
+				</ToggleGroup>
+			</div>
 			{/* biome-ignore lint/a11y/useSemanticElements: contenteditable required for multiline, IME, paste */}
 			<div
 				ref={divRef}
@@ -130,7 +230,7 @@ export function TextEditOverlay({
 					fontFamily: element.fontFamily,
 					fontWeight,
 					fontStyle,
-					textAlign: element.textAlign,
+					textAlign,
 					letterSpacing: `${letterSpacing}px`,
 					lineHeight,
 					color: element.color,

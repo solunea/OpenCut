@@ -10,6 +10,7 @@ import type {
 	ElementAnimations,
 	NumberAnimationChannel,
 } from "@/types/animation";
+import type { MediaKeyframeEasing } from "@/types/timeline";
 import { TIME_EPSILON_SECONDS } from "@/constants/animation-constants";
 import { generateUUID } from "@/utils/id";
 import { getChannelValueAtTime, normalizeChannel } from "./interpolation";
@@ -406,10 +407,12 @@ export function splitAnimationsAtTime({
 	animations,
 	splitTime,
 	shouldIncludeSplitBoundary = true,
+	keyframeEasing,
 }: {
 	animations: ElementAnimations | undefined;
 	splitTime: number;
 	shouldIncludeSplitBoundary?: boolean;
+	keyframeEasing?: MediaKeyframeEasing;
 }): {
 	leftAnimations: ElementAnimations | undefined;
 	rightAnimations: ElementAnimations | undefined;
@@ -451,6 +454,7 @@ export function splitAnimationsAtTime({
 				channel: normalizedChannel,
 				time: splitTime,
 				fallbackValue: normalizedChannel.keyframes[0].value,
+				easing: keyframeEasing,
 			});
 			const knownPropertyPath = isAnimationPropertyPath({ propertyPath })
 				? (propertyPath as AnimationPropertyPath)

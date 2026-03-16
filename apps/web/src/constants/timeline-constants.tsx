@@ -1,6 +1,10 @@
 import type { TTimelineViewState } from "@/types/project";
 import type { BlendMode } from "@/types/rendering";
-import type { TrackType, Transform } from "@/types/timeline";
+import type {
+	MediaKeyframeEasing,
+	TrackType,
+	Transform,
+} from "@/types/timeline";
 import {
 	Happy01Icon,
 	MagicWand05Icon,
@@ -16,6 +20,7 @@ export const DEFAULT_TRANSFORM: Transform = {
 	rotate: 0,
 };
 
+export const DEFAULT_MEDIA_KEYFRAME_EASING: MediaKeyframeEasing = "linear";
 export const DEFAULT_OPACITY = 1;
 export const DEFAULT_BLEND_MODE: BlendMode = "normal";
 export const DEFAULT_BOOKMARK_COLOR = "#009dff";

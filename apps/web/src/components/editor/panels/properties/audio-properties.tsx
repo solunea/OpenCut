@@ -1,16 +1,17 @@
 import type { AudioElement } from "@/types/timeline";
-import { ClipSpeedSection } from "./sections";
+import { ClipSpeedSection, MediaAnimationSection } from "./sections";
 
 export function AudioProperties({
-  element,
-  trackId,
+element,
+trackId,
 }: {
-  element: AudioElement;
-  trackId: string;
+element: AudioElement;
+trackId: string;
 }) {
-  return (
-    <div className="flex h-full flex-col">
-      <ClipSpeedSection element={element} trackId={trackId} />
-    </div>
-  );
+return (
+<div className="flex h-full flex-col">
+<ClipSpeedSection element={element} trackId={trackId} />
+<MediaAnimationSection element={element} trackId={trackId} />
+</div>
+);
 }

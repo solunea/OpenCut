@@ -159,10 +159,14 @@ export function useTransformHandles({
 				elementDuration: element.duration,
 			});
 			const resolvedTransform = resolveTransformAtTime({
-				baseTransform: element.transform,
-				animations: element.animations,
-				localTime,
-			});
+baseTransform: element.transform,
+animations: element.animations,
+localTime,
+keyframeEasing:
+element.type === "video" || element.type === "image"
+? element.keyframeEasing
+: undefined,
+});
 
 			const initialDistance = getCornerDistance({ bounds, corner });
 			const baseWidth = bounds.width / resolvedTransform.scale;
@@ -209,10 +213,14 @@ export function useTransformHandles({
 				elementDuration: element.duration,
 			});
 			const resolvedTransform = resolveTransformAtTime({
-				baseTransform: element.transform,
-				animations: element.animations,
-				localTime,
-			});
+baseTransform: element.transform,
+animations: element.animations,
+localTime,
+keyframeEasing:
+element.type === "video" || element.type === "image"
+? element.keyframeEasing
+: undefined,
+});
 
 			const position = screenToCanvas({
 				clientX: event.clientX,

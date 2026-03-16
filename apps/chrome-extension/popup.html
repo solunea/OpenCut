@@ -1,107 +1,110 @@
 <!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>OpenCut Cursor Tracker</title>
-		<style>
-			body {
-				margin: 0;
-				width: 320px;
-				background: #0b1020;
-				color: #f8fafc;
-				font-family: Inter, system-ui, sans-serif;
-			}
 
-			main {
-				padding: 16px;
-				display: flex;
-				flex-direction: column;
-				gap: 12px;
-			}
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>OpenCut Cursor Tracker</title>
+	<style>
+		body {
+			margin: 0;
+			width: 320px;
+			background: #0b1020;
+			color: #f8fafc;
+			font-family: Inter, system-ui, sans-serif;
+		}
 
-			h1 {
-				margin: 0;
-				font-size: 16px;
-			}
+		main {
+			padding: 16px;
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
+		}
 
-			p {
-				margin: 0;
-				font-size: 12px;
-				line-height: 1.5;
-				color: #cbd5e1;
-			}
+		h1 {
+			margin: 0;
+			font-size: 16px;
+		}
 
-			button {
-				border: 0;
-				border-radius: 10px;
-				padding: 10px 12px;
-				font: inherit;
-				font-weight: 600;
-				cursor: pointer;
-			}
+		p {
+			margin: 0;
+			font-size: 12px;
+			line-height: 1.5;
+			color: #cbd5e1;
+		}
 
-			button[data-variant="primary"] {
-				background: #4f46e5;
-				color: white;
-			}
+		button {
+			border: 0;
+			border-radius: 10px;
+			padding: 10px 12px;
+			font: inherit;
+			font-weight: 600;
+			cursor: pointer;
+		}
 
-			button[data-variant="secondary"] {
-				background: #1e293b;
-				color: white;
-			}
+		button[data-variant="primary"] {
+			background: #4f46e5;
+			color: white;
+		}
 
-			button[data-variant="ghost"] {
-				background: #111827;
-				color: #e2e8f0;
-			}
+		button[data-variant="secondary"] {
+			background: #1e293b;
+			color: white;
+		}
 
-			button:disabled {
-				opacity: 0.5;
-				cursor: not-allowed;
-			}
+		button[data-variant="ghost"] {
+			background: #111827;
+			color: #e2e8f0;
+		}
 
-			.row {
-				display: grid;
-				grid-template-columns: 1fr 1fr;
-				gap: 8px;
-			}
+		button:disabled {
+			opacity: 0.5;
+			cursor: not-allowed;
+		}
 
-			.card {
-				background: #111827;
-				border: 1px solid #1f2937;
-				border-radius: 12px;
-				padding: 12px;
-				display: flex;
-				flex-direction: column;
-				gap: 8px;
-			}
+		.row {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 8px;
+		}
 
-			.status {
-				font-size: 12px;
-				color: #cbd5e1;
-			}
+		.card {
+			background: #111827;
+			border: 1px solid #1f2937;
+			border-radius: 12px;
+			padding: 12px;
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
 
-			.status[data-error="true"] {
-				color: #fca5a5;
-			}
-		</style>
-	</head>
-	<body>
-		<main>
-			<div>
-				<h1>OpenCut Cursor Tracker</h1>
-				<p>Track cursor motion on the current tab and export an OpenCut-compatible JSON file.</p>
+		.status {
+			font-size: 12px;
+			color: #cbd5e1;
+		}
+
+		.status[data-error="true"] {
+			color: #fca5a5;
+		}
+	</style>
+</head>
+
+<body>
+	<main>
+		<div>
+			<h1>OpenCut Cursor Tracker</h1>
+			<p>Track cursor motion on the current tab and export an OpenCut-compatible JSON file.</p>
+		</div>
+		<div class="card">
+			<div class="row">
+				<button id="start" data-variant="primary">Start</button>
+				<button id="stop" data-variant="secondary">Stop</button>
 			</div>
-			<div class="card">
-				<div class="row">
-					<button id="start" data-variant="primary">Start</button>
-					<button id="stop" data-variant="secondary">Stop</button>
-				</div>
-				<button id="export" data-variant="ghost">Export tracking JSON</button>
-				<div id="status" class="status"></div>
-			</div>
-		</main>
-		<script src="popup.js"></script>
-	</body>
+			<button id="export" data-variant="ghost">Export tracking JSON</button>
+			<div id="status" class="status"></div>
+		</div>
+	</main>
+	<script src="popup.js"></script>
+</body>
+
 </html>

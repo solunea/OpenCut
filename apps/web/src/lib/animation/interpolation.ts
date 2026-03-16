@@ -7,6 +7,7 @@ import type {
 	NumberAnimationChannel,
 } from "@/types/animation";
 import { TIME_EPSILON_SECONDS } from "@/constants/animation-constants";
+import type { MediaKeyframeEasing } from "@/types/timeline";
 
 function byTimeAscending({
 	leftTime,
@@ -122,6 +123,30 @@ function lerpNumber({
 	return leftValue + (rightValue - leftValue) * progress;
 }
 
+function applyMediaKeyframeEasing({
+	progress,
+	easing,
+}: {
+	progress: number;
+	easing?: MediaKeyframeEasing;
+}): number {
+	const clampedProgress = clamp01({ value: progress });
+
+	switch (easing) {
+		case "ease-in":
+			return clampedProgress ** 3;
+		case "ease-out":
+			return 1 - (1 - clampedProgress) ** 3;
+		case "ease-in-out":
+			return clampedProgress < 0.5
+				? 4 * clampedProgress ** 3
+				: 1 - ((-2 * clampedProgress + 2) ** 3) / 2;
+		case "linear":
+		default:
+			return clampedProgress;
+	}
+}
+
 function interpolateColor({
 	leftColor,
 	rightColor,
@@ -181,11 +206,13 @@ function evaluateChannelValueAtTime<TKeyframe extends { time: number; value: TVa
 	keyframes,
 	time,
 	fallbackValue,
+	easing,
 	getInterpolatedValue,
 }: {
 	keyframes: TKeyframe[] | undefined;
 	time: number;
 	fallbackValue: TValue;
+	easing?: MediaKeyframeEasing;
 	getInterpolatedValue: ({
 		leftKeyframe,
 		rightKeyframe,
@@ -239,11 +266,15 @@ function evaluateChannelValueAtTime<TKeyframe extends { time: number; value: TVa
 		const progress = clamp01({
 			value: (time - leftKeyframe.time) / span,
 		});
+		const easedProgress = applyMediaKeyframeEasing({
+			progress,
+			easing,
+		});
 
 		return getInterpolatedValue({
 			leftKeyframe,
 			rightKeyframe,
-			progress,
+			progress: easedProgress,
 		});
 	}
 
@@ -254,15 +285,18 @@ export function getNumberChannelValueAtTime({
 	channel,
 	time,
 	fallbackValue,
+	easing,
 }: {
 	channel: NumberAnimationChannel | undefined;
 	time: number;
 	fallbackValue: number;
+	easing?: MediaKeyframeEasing;
 }): number {
 	return evaluateChannelValueAtTime({
 		keyframes: channel?.keyframes,
 		time,
 		fallbackValue,
+		easing,
 		getInterpolatedValue: ({ leftKeyframe, rightKeyframe, progress }) => {
 			if (leftKeyframe.interpolation === "hold") {
 				return leftKeyframe.value;
@@ -281,15 +315,18 @@ export function getColorValueAtTime({
 	channel,
 	time,
 	fallbackValue,
+	easing,
 }: {
 	channel: ColorAnimationChannel | undefined;
 	time: number;
 	fallbackValue: string;
+	easing?: MediaKeyframeEasing;
 }): string {
 	return evaluateChannelValueAtTime({
 		keyframes: channel?.keyframes,
 		time,
 		fallbackValue,
+		easing,
 		getInterpolatedValue: ({ leftKeyframe, rightKeyframe, progress }) => {
 			if (leftKeyframe.interpolation === "hold") {
 				return leftKeyframe.value;
@@ -325,10 +362,12 @@ export function getChannelValueAtTime({
 	channel,
 	time,
 	fallbackValue,
+	easing,
 }: {
 	channel: AnimationChannel | undefined;
 	time: number;
 	fallbackValue: AnimationValue;
+	easing?: MediaKeyframeEasing;
 }): AnimationValue {
 	if (!channel || channel.keyframes.length === 0) {
 		return fallbackValue;
@@ -343,6 +382,7 @@ export function getChannelValueAtTime({
 			channel,
 			time,
 			fallbackValue,
+			easing,
 		});
 	}
 
@@ -355,6 +395,7 @@ export function getChannelValueAtTime({
 			channel,
 			time,
 			fallbackValue,
+			easing,
 		});
 	}
 

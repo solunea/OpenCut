@@ -143,6 +143,11 @@ async function startSession({
 }
 
 async function stopSession({ controllerTabId, controllerWindowId }) {
+	const session = sessions.get(controllerTabId);
+	if (!session?.startedTabIds?.length) {
+		return { stoppedCount: 0 };
+	}
+
 	const tabs = await resolveSessionTabs({ controllerTabId, controllerWindowId });
 	let stoppedCount = 0;
 
@@ -201,14 +206,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		return undefined;
 	}
 
-	const controllerTabId = sender.tab?.id;
-	const controllerWindowId = sender.tab?.windowId;
-	if (typeof controllerTabId !== "number") {
-		sendResponse({ ok: false, error: "OpenCut Cursor Tracker controller tab is unavailable" });
-		return false;
-	}
-
 	const handleMessage = async () => {
+		const controllerTabId = sender.tab?.id;
+		const controllerWindowId = sender.tab?.windowId;
+		if (typeof controllerTabId !== "number") {
+			throw new Error("OpenCut Cursor Tracker controller tab is unavailable");
+		}
+
 		if (message.type === "session-start") {
 			return await startSession({
 				controllerTabId,

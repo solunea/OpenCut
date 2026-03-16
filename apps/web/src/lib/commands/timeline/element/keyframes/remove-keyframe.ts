@@ -8,7 +8,7 @@ import {
 	withElementBaseValueForProperty,
 } from "@/lib/animation";
 import { Command } from "@/lib/commands/base-command";
-import { updateElementInTracks } from "@/lib/timeline";
+import { isMediaElement, updateElementInTracks } from "@/lib/timeline";
 import type { AnimationPropertyPath } from "@/types/animation";
 import type { TimelineElement, TimelineTrack } from "@/types/timeline";
 
@@ -41,6 +41,7 @@ function sampleValueBeforeRemoval({
 		channel,
 		time: keyframe.time,
 		fallbackValue: baseValue,
+		easing: isMediaElement(element) ? element.keyframeEasing : undefined,
 	});
 	return typeof sampled === "number" ? sampled : null;
 }

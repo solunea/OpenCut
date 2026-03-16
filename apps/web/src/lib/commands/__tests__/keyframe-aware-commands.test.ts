@@ -53,6 +53,7 @@ function buildVideoElement(): VideoElement {
 		startTime: 1,
 		trimStart: 0,
 		trimEnd: 0,
+		keyframeEasing: "linear",
 		transform: DEFAULT_TRANSFORM,
 		opacity: 1,
 		animations: {
@@ -201,6 +202,41 @@ describe("keyframe-aware timeline commands", () => {
 		).toBeCloseTo(5 / 3, 4);
 	});
 
+	test("split uses media easing for inserted boundary keyframes", () => {
+		const element: VideoElement = {
+			...buildVideoElement(),
+			keyframeEasing: "ease-in",
+		};
+		const tracks = buildTracks({ element });
+		let updatedTracks: TimelineTrack[] = tracks;
+		mockEditorCore({
+			editor: {
+				timeline: {
+					getTracks: () => tracks,
+					updateTracks: (nextTracks) => {
+						updatedTracks = nextTracks;
+					},
+				},
+				selection: {
+					getSelectedElements: () => [],
+					setSelectedElements: () => {},
+				},
+			},
+		});
+
+		new SplitElementsCommand({
+			elements: [{ trackId: "track-1", elementId: "element-1" }],
+			splitTime: 5,
+		}).execute();
+
+		const rightElement = updatedTracks[0].elements.find(
+			(candidate) => candidate.id !== "element-1",
+		) as VideoElement;
+		expect(
+			rightElement.animations?.channels["transform.scale"]?.keyframes[0]?.value,
+		).toBeCloseTo(1.5 + (1 / 3) ** 3 * 0.5, 4);
+	});
+
 	test("duplicate creates independent keyframe ids for copied element", () => {
 		const tracks = buildTracks({ element: buildVideoElement() });
 		let updatedTracks: TimelineTrack[] = tracks;
@@ -312,7 +348,61 @@ describe("generic keyframe commands", () => {
 		expect(updatedElement.transform.scale).toBe(1);
 	});
 
+	test("remove persists last keyframe value to base property for media elements", () => {
+		const element: VideoElement = {
+			...buildVideoElement(),
+			keyframeEasing: "ease-in",
+			transform: {
+				...DEFAULT_TRANSFORM,
+				scale: 1,
+			},
+			animations: {
+				channels: {
+					"transform.scale": {
+						valueKind: "number",
+						keyframes: [
+							{
+								id: "only-scale",
+								time: 2,
+								value: 2,
+								interpolation: "linear",
+							},
+						],
+					},
+				},
+			},
+		};
+		const tracks = buildTracks({ element });
+		let updatedTracks: TimelineTrack[] = tracks;
+		mockEditorCore({
+			editor: {
+				timeline: {
+					getTracks: () => tracks,
+					updateTracks: (nextTracks) => {
+						updatedTracks = nextTracks;
+					},
+				},
+				selection: {
+					getSelectedElements: () => [],
+					setSelectedElements: () => {},
+				},
+			},
+		});
+
+		new RemoveKeyframeCommand({
+			trackId: "track-1",
+			elementId: "element-1",
+			propertyPath: "transform.scale",
+			keyframeId: "only-scale",
+		}).execute();
+
+		const updatedElement = updatedTracks[0].elements[0] as VideoElement;
+		expect(updatedElement.transform.scale).toBeCloseTo(2, 4);
+		expect(updatedElement.animations?.channels["transform.scale"]).toBeUndefined();
+	});
+
 	test("remove persists value to base property when channel becomes empty", () => {
+
 		const element: VideoElement = {
 			...buildVideoElement(),
 			transform: {

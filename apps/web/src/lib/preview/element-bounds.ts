@@ -193,6 +193,7 @@ export function getElementBounds({
 			baseTransform: element.transform,
 			animations: element.animations,
 			localTime,
+			keyframeEasing: element.keyframeEasing,
 		});
 		const sourceWidth = mediaAsset?.width ?? canvasWidth;
 		const sourceHeight = mediaAsset?.height ?? canvasHeight;

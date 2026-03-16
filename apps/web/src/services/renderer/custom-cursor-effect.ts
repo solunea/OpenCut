@@ -689,6 +689,203 @@ function getCursorDrawOffset({
 	return { x: 0, y: 0 };
 }
 
+interface CursorCleanupGeometry {
+	centerX: number;
+	centerY: number;
+	radiusX: number;
+	radiusY: number;
+	feather: number;
+	sampleDistance: number;
+}
+
+function resolveCursorCleanupGeometry({
+	kind,
+	pixelX,
+	pixelY,
+	size,
+	cleanupSize,
+}: {
+	kind: CursorVisualKind;
+	pixelX: number;
+	pixelY: number;
+	size: number;
+	cleanupSize: number;
+}): CursorCleanupGeometry {
+	const cleanupScale = clamp(cleanupSize / 100, 0.6, 2.2);
+
+	if (kind === "text") {
+		return {
+			centerX: pixelX,
+			centerY: pixelY + size * 0.48,
+			radiusX: size * 0.16 * cleanupScale,
+			radiusY: size * 0.68 * cleanupScale,
+			feather: 0.35,
+			sampleDistance: size * 0.9 * cleanupScale,
+		};
+	}
+
+	if (kind === "crosshair" || kind === "not-allowed") {
+		return {
+			centerX: pixelX,
+			centerY: pixelY,
+			radiusX: size * 0.44 * cleanupScale,
+			radiusY: size * 0.44 * cleanupScale,
+			feather: 0.4,
+			sampleDistance: size * 0.9 * cleanupScale,
+		};
+	}
+
+	if (kind === "grab" || kind === "grabbing") {
+		return {
+			centerX: pixelX + size * 0.18,
+			centerY: pixelY + size * 0.24,
+			radiusX: size * 0.4 * cleanupScale,
+			radiusY: size * 0.4 * cleanupScale,
+			feather: 0.42,
+			sampleDistance: size * 0.95 * cleanupScale,
+		};
+	}
+
+	if (kind === "pointer") {
+		return {
+			centerX: pixelX + size * 0.28,
+			centerY: pixelY + size * 0.42,
+			radiusX: size * 0.34 * cleanupScale,
+			radiusY: size * 0.46 * cleanupScale,
+			feather: 0.4,
+			sampleDistance: size * 0.95 * cleanupScale,
+		};
+	}
+
+	return {
+		centerX: pixelX + size * 0.2,
+		centerY: pixelY + size * 0.42,
+		radiusX: size * 0.34 * cleanupScale,
+		radiusY: size * 0.5 * cleanupScale,
+		feather: 0.42,
+		sampleDistance: size * 1.02 * cleanupScale,
+	};
+}
+
+function cleanupBoundsIntersectFrame({
+	geometry,
+	width,
+	height,
+}: {
+	geometry: CursorCleanupGeometry;
+	width: number;
+	height: number;
+}): boolean {
+	return !(
+		geometry.centerX + geometry.radiusX < 0 ||
+		geometry.centerY + geometry.radiusY < 0 ||
+		geometry.centerX - geometry.radiusX > width ||
+		geometry.centerY - geometry.radiusY > height
+	);
+}
+
+function applyNativeCursorCleanup({
+	context,
+	source,
+	width,
+	height,
+	geometry,
+}: {
+	context: RenderableContext;
+	source: CanvasImageSource;
+	width: number;
+	height: number;
+	geometry: CursorCleanupGeometry;
+}): void {
+	const padding = Math.ceil(
+		Math.max(geometry.radiusX, geometry.radiusY) + geometry.sampleDistance + 2,
+	);
+	const minX = Math.max(0, Math.floor(geometry.centerX - geometry.radiusX - padding));
+	const minY = Math.max(0, Math.floor(geometry.centerY - geometry.radiusY - padding));
+	const maxX = Math.min(width, Math.ceil(geometry.centerX + geometry.radiusX + padding));
+	const maxY = Math.min(height, Math.ceil(geometry.centerY + geometry.radiusY + padding));
+	const regionWidth = Math.max(0, maxX - minX);
+	const regionHeight = Math.max(0, maxY - minY);
+	if (regionWidth <= 1 || regionHeight <= 1) {
+		return;
+	}
+
+	const cleanupCanvas = createOffscreenCanvas({ width: regionWidth, height: regionHeight });
+	const cleanupContext = cleanupCanvas.getContext("2d") as RenderableContext | null;
+	if (!cleanupContext) {
+		return;
+	}
+
+	cleanupContext.drawImage(source, -minX, -minY, width, height);
+	const imageData = cleanupContext.getImageData(0, 0, regionWidth, regionHeight);
+	const originalData = new Uint8ClampedArray(imageData.data);
+	const targetData = imageData.data;
+	const localCenterX = geometry.centerX - minX;
+	const localCenterY = geometry.centerY - minY;
+	const directionCount = 8;
+
+	for (let y = 0; y < regionHeight; y += 1) {
+		for (let x = 0; x < regionWidth; x += 1) {
+			const normalizedX = (x - localCenterX) / Math.max(geometry.radiusX, 0.0001);
+			const normalizedY = (y - localCenterY) / Math.max(geometry.radiusY, 0.0001);
+			const normalizedDistance = Math.hypot(normalizedX, normalizedY);
+			if (normalizedDistance > 1) {
+				continue;
+			}
+
+			const blend = clamp((1 - normalizedDistance) / geometry.feather, 0, 1);
+			if (blend <= 0.001) {
+				continue;
+			}
+
+			let red = 0;
+			let green = 0;
+			let blue = 0;
+			let alpha = 0;
+			let totalWeight = 0;
+
+			for (let directionIndex = 0; directionIndex < directionCount; directionIndex += 1) {
+				const angle = (directionIndex / directionCount) * Math.PI * 2;
+				const sampleX = Math.round(x + Math.cos(angle) * geometry.sampleDistance);
+				const sampleY = Math.round(y + Math.sin(angle) * geometry.sampleDistance);
+				const clampedSampleX = clamp(sampleX, 0, regionWidth - 1);
+				const clampedSampleY = clamp(sampleY, 0, regionHeight - 1);
+				const sampleOffset = (clampedSampleY * regionWidth + clampedSampleX) * 4;
+				const sampleAlpha = originalData[sampleOffset + 3] / 255;
+				const sampleWeight = 0.2 + sampleAlpha * 0.8;
+				red += originalData[sampleOffset] * sampleWeight;
+				green += originalData[sampleOffset + 1] * sampleWeight;
+				blue += originalData[sampleOffset + 2] * sampleWeight;
+				alpha += originalData[sampleOffset + 3] * sampleWeight;
+				totalWeight += sampleWeight;
+			}
+
+			if (totalWeight <= 0.0001) {
+				continue;
+			}
+
+			const offset = (y * regionWidth + x) * 4;
+			const mixedRed = red / totalWeight;
+			const mixedGreen = green / totalWeight;
+			const mixedBlue = blue / totalWeight;
+			const mixedAlpha = alpha / totalWeight;
+			targetData[offset] = Math.round(originalData[offset] + (mixedRed - originalData[offset]) * blend);
+			targetData[offset + 1] = Math.round(
+				originalData[offset + 1] + (mixedGreen - originalData[offset + 1]) * blend,
+			);
+			targetData[offset + 2] = Math.round(
+				originalData[offset + 2] + (mixedBlue - originalData[offset + 2]) * blend,
+			);
+			targetData[offset + 3] = Math.round(
+				originalData[offset + 3] + (mixedAlpha - originalData[offset + 3]) * blend,
+			);
+		}
+	}
+
+	cleanupContext.putImageData(imageData, 0, 0);
+	context.drawImage(cleanupCanvas, minX, minY);
+}
+
 export function applyCustomCursorEffect({
 	source,
 	width,
@@ -742,10 +939,34 @@ export function applyCustomCursorEffect({
 
 	const size = clamp(resolveNumber({ value: effectParams.size, fallback: 28 }), 10, 96);
 	const opacity = clamp(resolveNumber({ value: effectParams.opacity, fallback: 100 }) / 100, 0, 1);
-	if (opacity <= 0.001) {
-		return source;
-	}
-	if (pixelX < -size || pixelY < -size || pixelX > width + size || pixelY > height + size) {
+	const removeNativeCursor = resolveBoolean({
+		value: effectParams.removeNativeCursor,
+		fallback: true,
+	});
+	const cleanupSize = clamp(
+		resolveNumber({ value: effectParams.cleanupSize, fallback: 130 }),
+		60,
+		220,
+	);
+	const kind = normalizeCursorKind(currentEvent.cursor);
+	const cleanupGeometry = resolveCursorCleanupGeometry({
+		kind,
+		pixelX,
+		pixelY,
+		size,
+		cleanupSize,
+	});
+	const shouldCleanup =
+		removeNativeCursor &&
+		cleanupBoundsIntersectFrame({
+			geometry: cleanupGeometry,
+			width,
+			height,
+		});
+	const shouldDrawCursor =
+		opacity > 0.001 &&
+		!(pixelX < -size || pixelY < -size || pixelX > width + size || pixelY > height + size);
+	if (!shouldCleanup && !shouldDrawCursor) {
 		return source;
 	}
 
@@ -756,7 +977,6 @@ export function applyCustomCursorEffect({
 	const pulse = clickPulseEnabled ? resolveClickPulse({ events, time: sourceTime, index }) : 0;
 	const pressed = resolvePressedState({ events, index });
 	const scale = pressed ? 0.92 : 1 + pulse * 0.06;
-	const kind = normalizeCursorKind(currentEvent.cursor);
 	const drawOffset = getCursorDrawOffset({ kind, size });
 	const outlineColor = "rgba(15, 23, 42, 0.94)";
 
@@ -767,6 +987,18 @@ export function applyCustomCursorEffect({
 	}
 
 	context.drawImage(source, 0, 0, width, height);
+	if (shouldCleanup) {
+		applyNativeCursorCleanup({
+			context,
+			source,
+			width,
+			height,
+			geometry: cleanupGeometry,
+		});
+	}
+	if (!shouldDrawCursor) {
+		return canvas;
+	}
 	context.save();
 	context.translate(pixelX + drawOffset.x, pixelY + drawOffset.y);
 	context.scale(scale, scale);

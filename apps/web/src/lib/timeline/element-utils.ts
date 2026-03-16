@@ -1,6 +1,7 @@
 import { DEFAULT_TEXT_ELEMENT, DEFAULT_TEXT_ANIMATION } from "@/constants/text-constants";
 import {
 	DEFAULT_BLEND_MODE,
+	DEFAULT_MEDIA_KEYFRAME_EASING,
 	DEFAULT_OPACITY,
 	DEFAULT_TRANSFORM,
 	TIMELINE_CONSTANTS,
@@ -18,6 +19,7 @@ import type {
 	TimelineElement,
 	TimelineTrack,
 	AudioElement,
+	MediaElement,
 	VideoElement,
 	ImageElement,
 	VisualElement,
@@ -41,6 +43,16 @@ export function isVisualElement(
 		element.type === "image" ||
 		element.type === "text" ||
 		element.type === "sticker"
+	);
+}
+
+export function isMediaElement(
+	element: TimelineElement,
+): element is MediaElement {
+	return (
+		element.type === "audio" ||
+		element.type === "video" ||
+		element.type === "image"
 	);
 }
 
@@ -272,6 +284,7 @@ export function buildVideoElement({
 		trimEnd: 0,
 		sourceDuration: duration,
 		playbackRate: 1,
+		keyframeEasing: DEFAULT_MEDIA_KEYFRAME_EASING,
 		freezeFrameStart: 0,
 		freezeFrameEnd: 0,
 		muted: false,
@@ -312,6 +325,7 @@ export function buildImageElement({
 		trimStart: 0,
 		trimEnd: 0,
 		sourceDuration,
+		keyframeEasing: DEFAULT_MEDIA_KEYFRAME_EASING,
 		hidden: false,
 		transform: { ...DEFAULT_TRANSFORM },
 		opacity: DEFAULT_OPACITY,
@@ -342,6 +356,7 @@ export function buildUploadAudioElement({
 		trimStart: 0,
 		trimEnd: 0,
 		sourceDuration: duration,
+		keyframeEasing: DEFAULT_MEDIA_KEYFRAME_EASING,
 		volume: 1,
 		playbackRate: 1,
 		muted: false,
@@ -414,6 +429,7 @@ export function buildLibraryAudioElement({
 		trimStart: 0,
 		trimEnd: 0,
 		sourceDuration: duration,
+		keyframeEasing: DEFAULT_MEDIA_KEYFRAME_EASING,
 		volume: 1,
 		playbackRate: 1,
 		muted: false,
