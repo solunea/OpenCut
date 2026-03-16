@@ -30,6 +30,7 @@ import { TIMELINE_CONSTANTS } from "@/constants/timeline-constants";
 import { useEditor } from "@/hooks/use-editor";
 import { useFileUpload } from "@/hooks/use-file-upload";
 import { useRevealItem } from "@/hooks/use-reveal-item";
+import { invokeAction } from "@/lib/actions";
 import { processMediaAssets } from "@/lib/media/processing";
 import { buildElementFromMedia } from "@/lib/timeline/element-utils";
 import { TabCaptureDialog } from "@/components/editor/panels/assets/tab-capture-dialog";
@@ -40,6 +41,7 @@ import {
 	useAssetsPanelStore,
 } from "@/stores/assets-panel-store";
 import type { MediaAsset } from "@/types/assets";
+import type { RecordedCursorData } from "@/types/cursor-tracking";
 import { cn } from "@/utils/ui";
 import {
 	CloudUploadIcon,
@@ -51,6 +53,9 @@ import {
 	Video01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+
+const CURSOR_TRACKING_EXTENSION_DOWNLOAD_PATH =
+	"/downloads/opencut-cursor-tracker.zip";
 
 export function MediaView() {
 	const editor = useEditor();
@@ -75,10 +80,19 @@ export function MediaView() {
 	const [progress, setProgress] = useState(0);
 	const [isCaptureDialogOpen, setIsCaptureDialogOpen] = useState(false);
 
+	const handleDownloadExtension = () => {
+		const anchor = document.createElement("a");
+		anchor.href = CURSOR_TRACKING_EXTENSION_DOWNLOAD_PATH;
+		anchor.download = "opencut-cursor-tracker.zip";
+		anchor.click();
+	};
+
 	const processFiles = async ({
 		files,
+		recordedCursor,
 	}: {
 		files: FileList | File[];
+		recordedCursor?: RecordedCursorData;
 	}): Promise<void> => {
 		if (!files || files.length === 0) return;
 		if (!activeProject) {
@@ -95,10 +109,28 @@ export function MediaView() {
 					setProgress(progress.progress),
 			});
 			for (const asset of processedAssets) {
-				await editor.media.addMediaAsset({
+				const recordedCursorTracking = recordedCursor?.cursorTracking;
+				const shouldAttachRecordedCursor =
+					asset.type === "video" &&
+					recordedCursorTracking?.status === "ready" &&
+					recordedCursorTracking.samples.length > 0;
+				const savedAsset = await editor.media.addMediaAsset({
 					projectId: activeProject.metadata.id,
-					asset,
+					asset: shouldAttachRecordedCursor
+						? {
+								...asset,
+								cursorTracking: recordedCursorTracking,
+								recordedCursor,
+							}
+						: asset,
 				});
+				if (savedAsset && shouldAttachRecordedCursor && savedAsset.type === "video") {
+					toast.success("Cursor tracking attached", {
+						description:
+							recordedCursorTracking.samples.length +
+							" samples were attached to the captured video.",
+					});
+				}
 			}
 		} catch (error) {
 			console.error("Error processing files:", error);
@@ -190,7 +222,7 @@ export function MediaView() {
 				disabled={isProcessing}
 				isOpen={isCaptureDialogOpen}
 				onOpenChange={setIsCaptureDialogOpen}
-				onImport={({ files }) => processFiles({ files })}
+				onImport={({ files, recordedCursor }) => processFiles({ files, recordedCursor })}
 			/>
 
 			<PanelView
@@ -203,6 +235,7 @@ export function MediaView() {
 						sortBy={mediaSortBy}
 						sortOrder={mediaSortOrder}
 						onSort={handleSort}
+						onDownloadExtension={handleDownloadExtension}
 						onImportFiles={openFilePicker}
 						onCaptureTab={() => setIsCaptureDialogOpen(true)}
 					/>
@@ -293,28 +326,55 @@ function MediaAssetDraggable({
 }
 
 function MediaItemWithContextMenu({
-	item,
-	children,
-	onRemove,
+item,
+children,
+onRemove,
 }: {
-	item: MediaAsset;
-	children: React.ReactNode;
-	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
+item: MediaAsset;
+children: React.ReactNode;
+onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
 }) {
-	return (
-		<ContextMenu>
-			<ContextMenuTrigger>{children}</ContextMenuTrigger>
-			<ContextMenuContent>
-				<ContextMenuItem>Export clips</ContextMenuItem>
-				<ContextMenuItem
-					variant="destructive"
-					onClick={(event) => onRemove({ event, id: item.id })}
-				>
-					Delete
-				</ContextMenuItem>
-			</ContextMenuContent>
-		</ContextMenu>
-	);
+const hasReadyCursorTracking = item.cursorTracking?.status === "ready";
+const handleAttachCursorTracking = () => {
+const input = document.createElement("input");
+input.type = "file";
+input.accept = ".json,application/json";
+input.multiple = false;
+input.addEventListener("change", () => {
+const file = input.files?.[0];
+if (!file) {
+return;
+}
+invokeAction(
+"attach-cursor-tracking",
+{ mediaId: item.id, file },
+"mouseclick",
+);
+});
+input.click();
+};
+
+return (
+<ContextMenu>
+<ContextMenuTrigger>{children}</ContextMenuTrigger>
+<ContextMenuContent>
+{item.type === "video" ? (
+<ContextMenuItem onClick={handleAttachCursorTracking}>
+{hasReadyCursorTracking
+? "Replace cursor tracking"
+: "Attach cursor tracking"}
+</ContextMenuItem>
+) : null}
+<ContextMenuItem>Export clips</ContextMenuItem>
+<ContextMenuItem
+variant="destructive"
+onClick={(event) => onRemove({ event, id: item.id })}
+>
+Delete
+</ContextMenuItem>
+</ContextMenuContent>
+</ContextMenu>
+);
 }
 
 function MediaItemList({
@@ -385,6 +445,14 @@ function MediaDurationLabel({ duration }: { duration?: number }) {
 	);
 }
 
+function CursorTrackingBadge() {
+return (
+<div className="absolute top-1 left-1 rounded bg-primary/90 px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+Tracked
+</div>
+);
+}
+
 function MediaTypePlaceholder({
 	icon,
 	label,
@@ -438,36 +506,41 @@ function MediaPreview({
 	}
 
 	if (item.type === "video") {
-		if (item.thumbnailUrl) {
-			return (
-				<div className="relative size-full">
-					<Image
-						src={item.thumbnailUrl}
-						alt={item.name}
-						fill
-						sizes="100vw"
-						className="rounded object-cover"
-						loading="lazy"
-						unoptimized
-					/>
-					{shouldShowDurationBadge ? (
-						<MediaDurationBadge duration={item.duration} />
-					) : null}
-				</div>
-			);
-		}
+const hasReadyCursorTracking = item.cursorTracking?.status === "ready";
+if (item.thumbnailUrl) {
+return (
+<div className="relative size-full">
+<Image
+src={item.thumbnailUrl}
+alt={item.name}
+fill
+sizes="100vw"
+className="rounded object-cover"
+loading="lazy"
+unoptimized
+/>
+{hasReadyCursorTracking ? <CursorTrackingBadge /> : null}
+{shouldShowDurationBadge ? (
+<MediaDurationBadge duration={item.duration} />
+) : null}
+</div>
+);
+}
 
-		return (
-			<MediaTypePlaceholder
-				icon={Video01Icon}
-				label="Video"
-				duration={item.duration}
-				variant="muted"
-			/>
-		);
-	}
+return (
+<div className="relative size-full">
+<MediaTypePlaceholder
+icon={Video01Icon}
+label="Video"
+duration={item.duration}
+variant="muted"
+/>
+{hasReadyCursorTracking ? <CursorTrackingBadge /> : null}
+</div>
+);
+}
 
-	if (item.type === "lottie") {
+if (item.type === "lottie") {
 		if (item.thumbnailUrl) {
 			return (
 				<div className="relative size-full">
@@ -520,6 +593,7 @@ function MediaActions({
 	sortBy,
 	sortOrder,
 	onSort,
+	onDownloadExtension,
 	onImportFiles,
 	onCaptureTab,
 }: {
@@ -529,6 +603,7 @@ function MediaActions({
 	sortBy: MediaSortKey;
 	sortOrder: MediaSortOrder;
 	onSort: ({ key }: { key: MediaSortKey }) => void;
+	onDownloadExtension: () => void;
 	onImportFiles: () => void;
 	onCaptureTab: () => void;
 }) {
@@ -614,6 +689,14 @@ function MediaActions({
 					</TooltipContent>
 				</Tooltip>
 			</TooltipProvider>
+			<Button
+				variant="outline"
+				disabled={isProcessing}
+				size="sm"
+				onClick={onDownloadExtension}
+			>
+				Download extension
+			</Button>
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>
 					<Button

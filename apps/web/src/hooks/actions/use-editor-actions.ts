@@ -1,13 +1,15 @@
 "use client";
 
-import { useTimelineStore } from "@/stores/timeline-store";
-import { useActionHandler } from "@/hooks/actions/use-action-handler";
 import { toast } from "sonner";
+import { applyCursorTrackingToZoomEffect } from "@/lib/effects/cursor-follow";
+import { parseRecordedCursorFile } from "@/lib/media/recorded-cursor";
 import { buildTransitionApplication } from "@/lib/transitions";
-import { useEditor } from "../use-editor";
-import { useElementSelection } from "../timeline/element/use-element-selection";
+import { useActionHandler } from "@/hooks/actions/use-action-handler";
 import { useKeyframeSelection } from "../timeline/element/use-keyframe-selection";
+import { useElementSelection } from "../timeline/element/use-element-selection";
+import { useEditor } from "../use-editor";
 import { getElementsAtTime } from "@/lib/timeline";
+import { useTimelineStore } from "@/stores/timeline-store";
 import { downloadBlob } from "@/utils/browser";
 
 export function useEditorActions() {
@@ -282,6 +284,110 @@ export function useEditorActions() {
 		},
 		undefined,
 	);
+useActionHandler(
+"apply-cursor-follow",
+(args) => {
+const [target] = editor.timeline.getElementsWithTracks({
+elements: [{ trackId: args.trackId, elementId: args.elementId }],
+});
+if (!target || target.element.type !== "video") {
+toast.error("Failed to apply cursor follow", {
+description: "Select a video clip with a zoom effect.",
+});
+return;
+}
+
+const element = target.element;
+const effect = (element.effects ?? []).find(
+(candidate) => candidate.id === args.effectId,
+);
+if (!effect || effect.type !== "zoom") {
+toast.error("Failed to apply cursor follow", {
+description: "The selected effect is not a zoom effect.",
+});
+return;
+}
+
+const mediaAsset = editor
+.media
+.getAssets()
+.find((asset) => asset.id === element.mediaId);
+const cursorTracking = mediaAsset?.cursorTracking;
+const sourceDuration =
+typeof target.element.sourceDuration === "number" &&
+Number.isFinite(target.element.sourceDuration)
+? target.element.sourceDuration
+: mediaAsset?.duration;
+
+if (
+!cursorTracking ||
+cursorTracking.status !== "ready" ||
+cursorTracking.samples.length === 0
+) {
+toast.error("Failed to apply cursor follow", {
+description: "Attach a ready cursor tracking file to this video asset first.",
+});
+return;
+}
+
+if (
+typeof sourceDuration !== "number" ||
+!Number.isFinite(sourceDuration) ||
+sourceDuration <= 0
+) {
+toast.error("Failed to apply cursor follow", {
+description: "The source video duration is unavailable.",
+});
+return;
+}
+
+try {
+const applied = applyCursorTrackingToZoomEffect({
+animations: element.animations,
+effect,
+element,
+cursorTracking,
+sourceDuration,
+});
+const updatedEffects = (element.effects ?? []).map((existing) =>
+existing.id !== effect.id
+? existing
+: {
+...existing,
+params: {
+...existing.params,
+focusX: applied.focusX,
+focusY: applied.focusY,
+},
+},
+);
+
+editor.timeline.updateElements({
+updates: [
+{
+trackId: target.track.id,
+elementId: element.id,
+updates: {
+animations: applied.animations,
+effects: updatedEffects,
+},
+},
+],
+});
+
+toast.success("Cursor follow applied", {
+description: applied.sampleCount + " focus keyframes added to the zoom effect.",
+});
+} catch (error) {
+toast.error("Failed to apply cursor follow", {
+description:
+error instanceof Error ? error.message : "Please try again",
+});
+}
+},
+undefined,
+);
+
 
 	useActionHandler(
 		"delete-selected",
@@ -383,6 +489,72 @@ export function useEditorActions() {
 		},
 		undefined,
 	);
+useActionHandler(
+"attach-cursor-tracking",
+(args) => {
+void (async () => {
+if (!activeProject) {
+toast.error("Failed to attach cursor tracking", {
+description: "No active project is available.",
+});
+return;
+}
+
+const mediaAsset = editor
+.media
+.getAssets()
+.find((asset) => asset.id === args.mediaId);
+if (!mediaAsset || mediaAsset.type !== "video") {
+toast.error("Failed to attach cursor tracking", {
+description: "Choose a video asset in the Assets panel.",
+});
+return;
+}
+
+try {
+const recordedCursor = await parseRecordedCursorFile({
+file: args.file,
+});
+const cursorTracking = recordedCursor.cursorTracking;
+
+if (
+!cursorTracking ||
+cursorTracking.status !== "ready" ||
+cursorTracking.samples.length === 0
+) {
+throw new Error(
+"The tracking file does not contain usable cursor samples",
+);
+}
+
+const updatedAsset = await editor.media.updateMediaAsset({
+projectId: activeProject.metadata.id,
+id: mediaAsset.id,
+updates: {
+cursorTracking,
+recordedCursor,
+},
+});
+
+if (!updatedAsset) {
+throw new Error("The tracking file could not be saved");
+}
+
+toast.success("Cursor tracking attached", {
+description:
+cursorTracking.samples.length + " samples are ready for zoom focus.",
+});
+} catch (error) {
+toast.error("Failed to attach cursor tracking", {
+description:
+error instanceof Error ? error.message : "Please try again",
+});
+}
+})();
+},
+undefined,
+);
+
 
 	useActionHandler(
 		"copy-selected",

@@ -1,5 +1,8 @@
 import type { MediaType } from "@/types/assets";
-import type { CursorTrackingData } from "@/types/cursor-tracking";
+import type {
+	CursorTrackingData,
+	RecordedCursorData,
+} from "@/types/cursor-tracking";
 import type {
 	TProject,
 	TProjectMetadata,
@@ -28,6 +31,7 @@ export interface MediaAssetData {
 	ephemeral?: boolean;
 	thumbnailUrl?: string;
 	cursorTracking?: CursorTrackingData;
+	recordedCursor?: RecordedCursorData;
 }
 
 export type SerializedScene = Omit<TScene, "createdAt" | "updatedAt"> & {

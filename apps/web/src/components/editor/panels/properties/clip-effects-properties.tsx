@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type DragEvent } from "react";
+import { invokeAction } from "@/lib/actions";
 import type { Effect } from "@/types/effects";
 import type { VisualElement } from "@/types/timeline";
 import { getChannel } from "@/lib/animation";
@@ -134,12 +135,19 @@ function ClipEffectSection({
 }) {
 	const editor = useEditor();
 	const definition = getEffect({ effectType: effect.type });
+	const mediaAsset =
+		element.type === "video"
+			? editor.media.getAssets().find((asset) => asset.id === element.mediaId) ?? null
+			: null;
+	const hasReadyCursorTracking =
+		mediaAsset?.cursorTracking?.status === "ready" &&
+		mediaAsset.cursorTracking.samples.length > 0;
 	const { localTime, isPlayheadWithinElementRange } = useElementPlayhead({
 		startTime: element.startTime,
 		duration: element.duration,
 	});
 	const resolvedValues =
-		effect.type === "zoom" && isPlayheadWithinElementRange
+		effect.type === "zoom"
 			? resolveEffectParamsAtTime({
 					effect,
 					animations: element.animations,
@@ -407,6 +415,28 @@ function ClipEffectSection({
 								: undefined
 						}
 					/>
+					{effect.type === "zoom" && element.type === "video" ? (
+						<div className="mt-3 flex">
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={!hasReadyCursorTracking}
+								onClick={() =>
+									invokeAction(
+										"apply-cursor-follow",
+										{
+											trackId,
+											elementId: element.id,
+											effectId: effect.id,
+										},
+										"mouseclick",
+									)
+								}
+							>
+								Apply cursor follow
+							</Button>
+						</div>
+					) : null}
 				</SectionContent>
 			)}
 		</Section>

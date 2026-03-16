@@ -1,4 +1,5 @@
 import type { CursorSample, CursorTrackingData } from "@/types/cursor-tracking";
+import { getVideoInfo } from "./mediabunny";
 
 const ANALYSIS_SAMPLE_RATE = 10;
 const ANALYSIS_MAX_WIDTH = 960;
@@ -335,8 +336,14 @@ function simplifySamples({ samples }: { samples: CursorSample[] }): CursorSample
 
 export async function analyzeCursorTracking({
 	videoFile,
+	durationHint,
+	widthHint,
+	heightHint,
 }: {
 	videoFile: File;
+	durationHint?: number;
+	widthHint?: number;
+	heightHint?: number;
 }): Promise<CursorTrackingData> {
 	if (typeof document === "undefined") {
 		throw new Error("Cursor tracking is only available in the browser");
@@ -354,13 +361,66 @@ export async function analyzeCursorTracking({
 			await waitForEvent({ target: video, eventName: "loadedmetadata" });
 		}
 
-		const duration = Number.isFinite(video.duration) ? video.duration : 0;
-		if (duration <= 0) {
-			throw new Error("Video duration is unavailable");
+		let duration =
+			Number.isFinite(video.duration) && video.duration > 0
+				? video.duration
+				: undefined;
+		let sourceWidth = video.videoWidth > 0 ? video.videoWidth : undefined;
+		let sourceHeight = video.videoHeight > 0 ? video.videoHeight : undefined;
+
+		if (
+			typeof durationHint === "number" &&
+			Number.isFinite(durationHint) &&
+			durationHint > 0
+		) {
+			duration ??= durationHint;
+		}
+		if (
+			typeof widthHint === "number" &&
+			Number.isFinite(widthHint) &&
+			widthHint > 0
+		) {
+			sourceWidth ??= widthHint;
+		}
+		if (
+			typeof heightHint === "number" &&
+			Number.isFinite(heightHint) &&
+			heightHint > 0
+		) {
+			sourceHeight ??= heightHint;
 		}
 
-		const sourceWidth = video.videoWidth;
-		const sourceHeight = video.videoHeight;
+		if (!duration || !sourceWidth || !sourceHeight) {
+			try {
+				const videoInfo = await getVideoInfo({ videoFile });
+				if (
+					(!duration || duration <= 0) &&
+					Number.isFinite(videoInfo.duration) &&
+					videoInfo.duration > 0
+				) {
+					duration = videoInfo.duration;
+				}
+				if (
+					(!sourceWidth || sourceWidth <= 0) &&
+					Number.isFinite(videoInfo.width) &&
+					videoInfo.width > 0
+				) {
+					sourceWidth = videoInfo.width;
+				}
+				if (
+					(!sourceHeight || sourceHeight <= 0) &&
+					Number.isFinite(videoInfo.height) &&
+					videoInfo.height > 0
+				) {
+					sourceHeight = videoInfo.height;
+				}
+			} catch {
+			}
+		}
+
+		if (!duration || duration <= 0) {
+			throw new Error("Video duration is unavailable");
+		}
 		if (!sourceWidth || !sourceHeight) {
 			throw new Error("Video dimensions are unavailable");
 		}

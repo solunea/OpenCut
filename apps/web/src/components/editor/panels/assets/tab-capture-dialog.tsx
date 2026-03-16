@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
+	cancelCursorTrackingCaptureSession,
+	startCursorTrackingCaptureSession,
+	stopAndExportCursorTrackingCaptureSession,
+} from "@/lib/media/cursor-tracking-extension";
+import type { RecordedCursorData } from "@/types/cursor-tracking";
+import {
 	Dialog,
 	DialogBody,
 	DialogContent,
@@ -18,7 +24,13 @@ type CaptureState = "idle" | "recording" | "finalizing";
 interface TabCaptureDialogProps {
 	disabled?: boolean;
 	isOpen: boolean;
-	onImport: ({ files }: { files: File[] }) => Promise<void>;
+	onImport: ({
+		files,
+		recordedCursor,
+	}: {
+		files: File[];
+		recordedCursor?: RecordedCursorData;
+	}) => Promise<void>;
 	onOpenChange: (open: boolean) => void;
 }
 
@@ -69,6 +81,7 @@ export function TabCaptureDialog({
 	const streamRef = useRef<MediaStream | null>(null);
 	const chunksRef = useRef<Blob[]>([]);
 	const mimeTypeRef = useRef<string>("video/webm");
+	const hasCursorTrackingSessionRef = useRef(false);
 
 	useEffect(() => {
 		const video = videoRef.current;
@@ -90,8 +103,20 @@ export function TabCaptureDialog({
 	useEffect(() => {
 		return () => {
 			stopStream(streamRef.current);
+			if (hasCursorTrackingSessionRef.current) {
+				void cancelCursorTrackingCaptureSession();
+				hasCursorTrackingSessionRef.current = false;
+			}
 		};
 	}, []);
+
+	const cancelTrackingSessionIfNeeded = async () => {
+		if (!hasCursorTrackingSessionRef.current) {
+			return;
+		}
+		hasCursorTrackingSessionRef.current = false;
+		await cancelCursorTrackingCaptureSession();
+	};
 
 	const resetCapture = () => {
 		chunksRef.current = [];
@@ -106,6 +131,7 @@ export function TabCaptureDialog({
 		const blob = new Blob(chunksRef.current, { type: mimeType });
 
 		if (blob.size === 0) {
+			await cancelTrackingSessionIfNeeded();
 			resetCapture();
 			setCaptureState("idle");
 			toast.error("No video was recorded");
@@ -115,13 +141,33 @@ export function TabCaptureDialog({
 		setCaptureState("finalizing");
 
 		try {
+			let recordedCursor: RecordedCursorData | undefined;
+			if (hasCursorTrackingSessionRef.current) {
+				try {
+					recordedCursor = await stopAndExportCursorTrackingCaptureSession();
+				} catch (error) {
+					toast.error("Cursor tracking was not attached", {
+						description:
+							error instanceof Error
+								? error.message
+								: "The extension did not return any tracking data",
+					});
+				} finally {
+					hasCursorTrackingSessionRef.current = false;
+				}
+			}
+
 			const templateFile = buildCaptureFile({ mimeType });
 			const file = new File([blob], templateFile.name, {
 				type: mimeType,
 				lastModified: templateFile.lastModified,
 			});
-			await onImport({ files: [file] });
-			toast.success("Tab capture imported");
+			await onImport({ files: [file], recordedCursor });
+			toast.success(
+				recordedCursor
+					? "Tab capture imported with cursor tracking"
+					: "Tab capture imported",
+			);
 			resetCapture();
 			setCaptureState("idle");
 			onOpenChange(false);
@@ -131,6 +177,7 @@ export function TabCaptureDialog({
 				description:
 					error instanceof Error ? error.message : "Please try again",
 			});
+			await cancelTrackingSessionIfNeeded();
 			resetCapture();
 			setCaptureState("idle");
 		}
@@ -165,6 +212,8 @@ export function TabCaptureDialog({
 				video: videoConstraints,
 				audio: true,
 			});
+			await startCursorTrackingCaptureSession();
+			hasCursorTrackingSessionRef.current = true;
 			const mimeType = getSupportedRecorderMimeType();
 			const recorder = mimeType
 				? new MediaRecorder(stream, { mimeType })
@@ -198,6 +247,7 @@ export function TabCaptureDialog({
 			recorder.start(250);
 		} catch (error) {
 			console.error("Failed to start tab capture", error);
+			await cancelTrackingSessionIfNeeded();
 			resetCapture();
 			setCaptureState("idle");
 			toast.error("Failed to start tab capture", {
@@ -213,6 +263,7 @@ export function TabCaptureDialog({
 		}
 
 		if (!open) {
+			void cancelTrackingSessionIfNeeded();
 			resetCapture();
 			setCaptureState("idle");
 		}
@@ -229,7 +280,7 @@ export function TabCaptureDialog({
 				<DialogHeader>
 					<DialogTitle>Capture tab</DialogTitle>
 					<DialogDescription>
-						Open your browser picker, choose the tab you want to record, then stop the capture to import it directly into Assets.
+						Open your browser picker, choose the tab you want to record, then stop the capture to import it directly into Assets with automatic cursor tracking from the OpenCut extension.
 					</DialogDescription>
 				</DialogHeader>
 				<DialogBody>
@@ -246,6 +297,7 @@ export function TabCaptureDialog({
 								<div className="text-muted-foreground flex max-w-sm flex-col items-center gap-2 px-6 text-center text-sm">
 									<span>Record a browser tab and import the resulting clip directly into your media library.</span>
 									<span>The browser picker will still let you choose the exact tab.</span>
+									<span>The OpenCut Cursor Tracker extension will record cursor events in parallel and attach them automatically.</span>
 								</div>
 							)}
 						</div>
@@ -253,7 +305,7 @@ export function TabCaptureDialog({
 							{isRecording
 								? "Recording in progress. Stop when you want to import the clip."
 								: isFinalizing
-									? "Finalizing and importing capture..."
+									? "Finalizing, importing capture, and attaching cursor tracking..."
 									: "Tip: choose a browser tab in the system picker for the cleanest result."}
 						</div>
 					</div>

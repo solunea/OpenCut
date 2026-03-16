@@ -13,8 +13,14 @@ export type TActionArgsMap = {
 		transitionType: TransitionType;
 		durationSeconds: number;
 	};
+	"apply-cursor-follow": {
+		trackId: string;
+		elementId: string;
+		effectId: string;
+	};
 	"export-project": { id: string };
 	"import-project": { file: File; openInEditor?: boolean };
+	"attach-cursor-tracking": { mediaId: string; file: File };
 };
 
 type TKeysWithValueUndefined<T> = {

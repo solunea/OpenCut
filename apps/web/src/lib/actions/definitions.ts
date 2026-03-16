@@ -118,6 +118,15 @@ export const ACTIONS = {
 		description: "Freeze current frame at playhead",
 		category: "editing",
 	},
+	"apply-cursor-follow": {
+		description: "Apply imported cursor tracking to the selected zoom effect",
+		category: "editing",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			effectId: "string",
+		},
+	},
 	"select-all": {
 		description: "Select all elements",
 		category: "selection",
@@ -154,6 +163,11 @@ export const ACTIONS = {
 		description: "Import project file",
 		category: "controls",
 		args: { file: "File", openInEditor: "boolean" },
+	},
+	"attach-cursor-tracking": {
+		description: "Attach an imported cursor tracking file to a video asset",
+		category: "controls",
+		args: { mediaId: "string", file: "File" },
 	},
 	undo: {
 		description: "Undo",

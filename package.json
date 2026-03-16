@@ -15,7 +15,9 @@
     "lint:web:fix": "biome lint apps/web/src --write --max-diagnostics=1000",
     "format:web": "biome format apps/web/src/services/renderer --write --max-diagnostics=1000",
     "test": "bun test",
-    "generate:fonts": "npx tsx apps/web/scripts/generate-font-sprites.ts"
+    "generate:fonts": "npx tsx apps/web/scripts/generate-font-sprites.ts",
+    "package:cursor-tracker": "bun run apps/web/scripts/package-cursor-tracker.ts",
+    "postinstall": "bun run apps/web/scripts/setup-githooks.ts"
   },
   "dependencies": {
     "@types/react": "^19.2.10",

@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+
+bun run package:cursor-tracker
+git add apps/web/public/downloads/opencut-cursor-tracker.zip

@@ -1,0 +1,8 @@
+{
+  "name": "@opencut/chrome-extension",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "check": "node -e \"console.log('OpenCut Cursor Tracker extension')\""
+  }
+}

@@ -4,8 +4,9 @@
   "private": true,
   "packageManager": "bun@1.2.18",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "package:cursor-tracker": "bun run scripts/package-cursor-tracker.ts",
+    "dev": "bun run package:cursor-tracker && next dev",
+    "build": "bun run package:cursor-tracker && next build",
     "start": "next start",
     "lint": "biome check src/",
     "lint:fix": "biome check src/ --write",
