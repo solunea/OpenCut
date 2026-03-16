@@ -11,7 +11,6 @@
 	const CURSOR_STATE_SAMPLE_RATE_MS = 120;
 	const MESSAGE_NAMESPACE = "opencut-cursor";
 	const PAGE_BRIDGE_NAMESPACE = "opencut-cursor-bridge";
-	const HIDDEN_CURSOR_STYLE_ID = "opencut-hidden-native-cursor-style";
 
 	const state = {
 		isTracking: false,
@@ -25,46 +24,6 @@
 		lastMoveY: null,
 		shouldHideNativeCursor: false,
 	};
-
-	function getHiddenCursorStyle() {
-		return document.getElementById(HIDDEN_CURSOR_STYLE_ID);
-	}
-
-	function ensureHiddenCursorStyle() {
-		let style = getHiddenCursorStyle();
-		if (style) {
-			return style;
-		}
-
-		style = document.createElement("style");
-		style.id = HIDDEN_CURSOR_STYLE_ID;
-		style.textContent = "* { cursor: none !important; }";
-		(document.documentElement || document.head || document.body).appendChild(style);
-		return style;
-	}
-
-	function setNativeCursorHidden(hidden) {
-		const style = getHiddenCursorStyle();
-		if (hidden) {
-			ensureHiddenCursorStyle();
-			return;
-		}
-		if (style) {
-			style.remove();
-		}
-	}
-
-	function shouldHideNativeCursorInThisTab() {
-		return (
-			state.shouldHideNativeCursor &&
-			document.visibilityState === "visible" &&
-			document.hasFocus()
-		);
-	}
-
-	function syncNativeCursorHidden() {
-		setNativeCursorHidden(shouldHideNativeCursorInThisTab());
-	}
 
 	function clamp(value, min, max) {
 		return Math.min(Math.max(value, min), max);
@@ -87,28 +46,14 @@
 	}
 
 	function getCursor(target) {
-		const hiddenCursorStyle = getHiddenCursorStyle();
-		const shouldRestoreStyle = Boolean(hiddenCursorStyle && state.shouldHideNativeCursor);
-		if (shouldRestoreStyle) {
-			hiddenCursorStyle.disabled = true;
-		}
-
-		let cursor = "";
 		if (target instanceof Element) {
-			cursor = window.getComputedStyle(target).cursor;
+			const cursor = window.getComputedStyle(target).cursor;
 			if (cursor) {
-				if (shouldRestoreStyle) {
-					hiddenCursorStyle.disabled = false;
-				}
 				return cursor;
 			}
 		}
 
-		cursor = window.getComputedStyle(document.documentElement).cursor || "default";
-		if (shouldRestoreStyle) {
-			hiddenCursorStyle.disabled = false;
-		}
-		return cursor;
+		return window.getComputedStyle(document.documentElement).cursor || "default";
 	}
 
 	function getRelativeTimeSeconds() {
@@ -130,7 +75,6 @@
 		state.lastMoveX = null;
 		state.lastMoveY = null;
 		state.shouldHideNativeCursor = shouldHideNativeCursor;
-		syncNativeCursorHidden();
 	}
 
 	function recordEvent({
@@ -453,18 +397,6 @@
 			});
 	});
 
-	window.addEventListener("focus", () => {
-		syncNativeCursorHidden();
-	});
-
-	window.addEventListener("blur", () => {
-		syncNativeCursorHidden();
-	});
-
-	document.addEventListener("visibilitychange", () => {
-		syncNativeCursorHidden();
-	});
-
 	chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		if (!message || message.namespace !== MESSAGE_NAMESPACE) {
 			return undefined;
@@ -486,7 +418,6 @@
 		if (message.type === "stop") {
 			state.isTracking = false;
 			state.shouldHideNativeCursor = false;
-			syncNativeCursorHidden();
 			sendResponse({ ok: true, tracking: false, eventCount: state.events.length });
 			return false;
 		}
