@@ -711,39 +711,58 @@ function MediaPreview({
 	}
 
 	if (item.type === "video") {
-const hasReadyCursorTracking = item.cursorTracking?.status === "ready";
-if (item.thumbnailUrl) {
-return (
-<div className="relative size-full">
-<Image
-src={item.thumbnailUrl}
-alt={item.name}
-fill
-sizes="100vw"
-className="rounded object-cover"
-loading="lazy"
-unoptimized
-/>
-{hasReadyCursorTracking ? <CursorTrackingBadge /> : null}
-{shouldShowDurationBadge ? (
-<MediaDurationBadge duration={item.duration} />
-) : null}
-</div>
-);
-}
+		const hasReadyCursorTracking = item.cursorTracking?.status === "ready";
 
-return (
-<div className="relative size-full">
-<MediaTypePlaceholder
-icon={Video01Icon}
-label="Video"
-duration={item.duration}
-variant="muted"
-/>
-{hasReadyCursorTracking ? <CursorTrackingBadge /> : null}
-</div>
-);
-}
+		if (item.thumbnailUrl) {
+			return (
+				<div className="relative size-full">
+					<Image
+						src={item.thumbnailUrl}
+						alt={item.name}
+						fill
+						sizes="100vw"
+						className="rounded object-cover"
+						loading="lazy"
+						unoptimized
+					/>
+					{hasReadyCursorTracking ? <CursorTrackingBadge /> : null}
+					{shouldShowDurationBadge ? (
+						<MediaDurationBadge duration={item.duration} />
+					) : null}
+				</div>
+			);
+		}
+
+		if (item.url) {
+			return (
+				<div className="relative size-full">
+					<video
+						src={item.url}
+						className="size-full rounded object-cover"
+						muted
+						playsInline
+						preload="metadata"
+					/>
+					{hasReadyCursorTracking ? <CursorTrackingBadge /> : null}
+					{shouldShowDurationBadge ? (
+						<MediaDurationBadge duration={item.duration} />
+					) : null}
+				</div>
+			);
+		}
+
+		return (
+			<div className="relative size-full">
+				<MediaTypePlaceholder
+					icon={Video01Icon}
+					label="Video"
+					duration={item.duration}
+					variant="muted"
+				/>
+				{hasReadyCursorTracking ? <CursorTrackingBadge /> : null}
+			</div>
+		);
+	}
 
 if (item.type === "lottie") {
 		if (item.thumbnailUrl) {
