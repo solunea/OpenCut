@@ -11,6 +11,7 @@
 	const CURSOR_STATE_SAMPLE_RATE_MS = 120;
 	const MESSAGE_NAMESPACE = "opencut-cursor";
 	const PAGE_BRIDGE_NAMESPACE = "opencut-cursor-bridge";
+	const FRAME_RELAY_NAMESPACE = "opencut-cursor-frame-relay";
 
 	const state = {
 		isTracking: false,
@@ -62,6 +63,29 @@
 		}
 
 		return Math.max(0, (performance.now() - state.startedAtPerf) / 1000);
+	}
+
+	function isTopFrame() {
+		try {
+			return window.top === window;
+		} catch {
+			return false;
+		}
+	}
+
+	function findFrameElementForSource(sourceWindow) {
+		if (!sourceWindow) {
+			return null;
+		}
+		for (const element of document.querySelectorAll("iframe, frame")) {
+			try {
+				if (element.contentWindow === sourceWindow) {
+					return element;
+				}
+			} catch {
+			}
+		}
+		return null;
 	}
 
 	function resetTracking({ shouldHideNativeCursor = false } = {}) {
@@ -167,6 +191,63 @@
 		state.lastButtons = resolvedButtons;
 	}
 
+	function relayTrackedEvent({
+		type,
+		x,
+		y,
+		cursor,
+		button,
+		buttons,
+		deltaX,
+		deltaY,
+		scrollX,
+		scrollY,
+		force,
+	}) {
+		if (!state.isTracking || !state.startedAt) {
+			return;
+		}
+		if (isTopFrame()) {
+			recordEvent({
+				type,
+				x,
+				y,
+				cursor,
+				button,
+				buttons,
+				deltaX,
+				deltaY,
+				scrollX,
+				scrollY,
+				force,
+			});
+			return;
+		}
+		try {
+			window.parent.postMessage(
+				{
+					namespace: FRAME_RELAY_NAMESPACE,
+					type: "cursor-event",
+					payload: {
+						type,
+						x,
+						y,
+						cursor,
+						button,
+						buttons,
+						deltaX,
+						deltaY,
+						scrollX,
+						scrollY,
+						force,
+					},
+				},
+				"*",
+			);
+		} catch {
+		}
+	}
+
 	function buildCursorTracking() {
 		const samples = [];
 		let lastSample = null;
@@ -238,7 +319,7 @@
 	window.addEventListener(
 		"mousemove",
 		(event) => {
-			recordEvent({
+			relayTrackedEvent({
 				type: "move",
 				x: event.clientX,
 				y: event.clientY,
@@ -252,7 +333,7 @@
 	window.addEventListener(
 		"mousedown",
 		(event) => {
-			recordEvent({
+			relayTrackedEvent({
 				type: "down",
 				x: event.clientX,
 				y: event.clientY,
@@ -267,7 +348,7 @@
 	window.addEventListener(
 		"mouseup",
 		(event) => {
-			recordEvent({
+			relayTrackedEvent({
 				type: "up",
 				x: event.clientX,
 				y: event.clientY,
@@ -282,7 +363,7 @@
 	window.addEventListener(
 		"wheel",
 		(event) => {
-			recordEvent({
+			relayTrackedEvent({
 				type: "wheel",
 				x: event.clientX,
 				y: event.clientY,
@@ -303,7 +384,7 @@
 			const pointerX = state.lastPointer?.x ?? 0;
 			const pointerY = state.lastPointer?.y ?? 0;
 			const target = document.elementFromPoint(pointerX, pointerY);
-			recordEvent({
+			relayTrackedEvent({
 				type: "scroll",
 				x: pointerX,
 				y: pointerY,
@@ -326,7 +407,7 @@
 			return;
 		}
 
-		recordEvent({
+		relayTrackedEvent({
 			type: "move",
 			x: state.lastPointer.x,
 			y: state.lastPointer.y,
@@ -335,6 +416,36 @@
 			force: true,
 		});
 	}, CURSOR_STATE_SAMPLE_RATE_MS);
+
+	window.addEventListener("message", (event) => {
+		const message = event.data;
+		if (
+			!message ||
+			message.namespace !== FRAME_RELAY_NAMESPACE ||
+			message.type !== "cursor-event" ||
+			!message.payload ||
+			typeof message.payload.x !== "number" ||
+			typeof message.payload.y !== "number"
+		) {
+			return;
+		}
+		if (!state.isTracking || !state.startedAt) {
+			return;
+		}
+
+		const frameElement = findFrameElementForSource(event.source);
+		if (!frameElement) {
+			return;
+		}
+
+		const rect = frameElement.getBoundingClientRect();
+		const translatedEvent = {
+			...message.payload,
+			x: rect.left + message.payload.x,
+			y: rect.top + message.payload.y,
+		};
+		relayTrackedEvent(translatedEvent);
+	});
 
 	window.addEventListener("message", (event) => {
 		if (event.source !== window || event.origin !== window.location.origin) {
