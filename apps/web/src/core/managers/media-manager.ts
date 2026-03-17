@@ -1,6 +1,7 @@
 import type { EditorCore } from "@/core";
 import { clearAllLottieAssets, clearLottieAsset } from "@/lib/media/lottie";
 import { hasMediaId } from "@/lib/timeline/element-utils";
+import { nativeVideoPreview } from "@/services/renderer/native-video-preview";
 import { storageService } from "@/services/storage/service";
 import { videoCache } from "@/services/video-cache/service";
 import type { MediaAsset } from "@/types/assets";
@@ -49,6 +50,7 @@ export class MediaManager {
 		const asset = this.assets.find((asset) => asset.id === id);
 
 		videoCache.clearVideo({ mediaId: id });
+		nativeVideoPreview.clearVideo({ mediaId: id });
 		clearLottieAsset({ mediaId: id });
 
 		if (asset?.url) {
@@ -141,6 +143,7 @@ export class MediaManager {
 
 	async clearProjectMedia({ projectId }: { projectId: string }): Promise<void> {
 		videoCache.clearAll();
+		nativeVideoPreview.clearAll();
 		clearAllLottieAssets();
 
 		this.assets.forEach((asset) => {
@@ -169,6 +172,7 @@ export class MediaManager {
 
 	clearAllAssets(): void {
 		videoCache.clearAll();
+		nativeVideoPreview.clearAll();
 		clearAllLottieAssets();
 
 		this.assets.forEach((asset) => {

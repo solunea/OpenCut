@@ -1,6 +1,5 @@
 import {
 	getTimelineDurationFromSourceDuration,
-	getVisibleTimelineDuration,
 	normalizeFreezeFrameDuration,
 	normalizePlaybackRate,
 } from "@/lib/timeline/clip-speed";
@@ -116,15 +115,12 @@ function buildAudioReplaceUpdates({
 		trimStart: element.trimStart,
 		trimEnd: element.trimEnd,
 	});
-	const duration = Math.min(
-		element.duration,
-		getTimelineDurationFromSourceDuration({
-			sourceDuration,
-			trimStart,
-			trimEnd,
-			playbackRate: normalizePlaybackRate({ playbackRate: element.playbackRate }),
-		}),
-	);
+	const duration = getTimelineDurationFromSourceDuration({
+		sourceDuration,
+		trimStart,
+		trimEnd,
+		playbackRate: normalizePlaybackRate({ playbackRate: element.playbackRate }),
+	});
 
 	return {
 		mediaId: mediaAsset.id,
@@ -160,20 +156,13 @@ function buildVideoReplaceUpdates({
 	const freezeFrameEnd = normalizeFreezeFrameDuration({
 		duration: element.freezeFrameEnd,
 	});
-	const currentVisibleDuration = getVisibleTimelineDuration({
-		duration: element.duration,
-		freezeFrameStart,
-		freezeFrameEnd,
+	const nextVisibleDuration = getTimelineDurationFromSourceDuration({
+		sourceDuration,
+		trimStart,
+		trimEnd,
+		playbackRate: normalizePlaybackRate({ playbackRate: element.playbackRate }),
 	});
-	const nextVisibleDuration = Math.min(
-		currentVisibleDuration,
-		getTimelineDurationFromSourceDuration({
-			sourceDuration,
-			trimStart,
-			trimEnd,
-			playbackRate: normalizePlaybackRate({ playbackRate: element.playbackRate }),
-		}),
-	);
+	const duration = nextVisibleDuration + freezeFrameStart + freezeFrameEnd;
 
 	return {
 		mediaId: mediaAsset.id,
@@ -181,7 +170,7 @@ function buildVideoReplaceUpdates({
 		sourceDuration,
 		trimStart,
 		trimEnd,
-		duration: nextVisibleDuration + freezeFrameStart + freezeFrameEnd,
+		duration,
 	};
 }
 
@@ -208,6 +197,11 @@ function buildImageReplaceUpdates({
 			sourceDuration,
 			trimStart,
 			trimEnd,
+			duration: getTimelineDurationFromSourceDuration({
+				sourceDuration,
+				trimStart,
+				trimEnd,
+			}),
 		};
 	}
 

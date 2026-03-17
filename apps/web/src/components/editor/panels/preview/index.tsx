@@ -7,6 +7,7 @@ import { useRafLoop } from "@/hooks/use-raf-loop";
 import { useContainerSize } from "@/hooks/use-container-size";
 import { useFullscreen } from "@/hooks/use-fullscreen";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
+import { nativeVideoPreview } from "@/services/renderer/native-video-preview";
 import type { RootNode } from "@/services/renderer/nodes/root-node";
 import { buildScene } from "@/services/renderer/scene-builder";
 import { getLastFrameTime } from "@/lib/time";
@@ -203,6 +204,7 @@ function PreviewCanvas({
 		lastFrameRef.current = -1;
 		return () => {
 			clearIdleFullScaleTimeout();
+			nativeVideoPreview.clearAll();
 		};
 	}, [clearIdleFullScaleTimeout, renderer]);
 

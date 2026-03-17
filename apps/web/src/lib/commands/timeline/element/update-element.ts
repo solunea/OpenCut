@@ -1,4 +1,5 @@
 import { Command } from "@/lib/commands/base-command";
+import { clampAnimationsToDuration } from "@/lib/animation";
 import type { TimelineElement, TimelineTrack } from "@/types/timeline";
 import { EditorCore } from "@/core";
 import { updateElementInTracks } from "@/lib/timeline";
@@ -32,7 +33,20 @@ export class UpdateElementCommand extends Command {
 			tracks: this.savedState,
 			trackId: this.trackId,
 			elementId: this.elementId,
-			update: (element) => ({ ...element, ...this.updates }) as TimelineElement,
+			update: (element) => {
+				const nextElement = {
+					...element,
+					...this.updates,
+				} as TimelineElement;
+
+				return {
+					...nextElement,
+					animations: clampAnimationsToDuration({
+						animations: nextElement.animations,
+						duration: nextElement.duration,
+					}),
+				} as TimelineElement;
+			},
 		});
 
 		editor.timeline.updateTracks(updatedTracks);

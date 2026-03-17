@@ -1,5 +1,6 @@
 import { Command } from "@/lib/commands/base-command";
 import { EditorCore } from "@/core";
+import { nativeVideoPreview } from "@/services/renderer/native-video-preview";
 import type { MediaAsset } from "@/types/assets";
 import { storageService } from "@/services/storage/service";
 import { videoCache } from "@/services/video-cache/service";
@@ -34,6 +35,7 @@ export class RemoveMediaAssetCommand extends Command {
 		}
 
 		videoCache.clearVideo({ mediaId: this.assetId });
+		nativeVideoPreview.clearVideo({ mediaId: this.assetId });
 
 		editor.media.setAssets({
 			assets: assets.filter((media) => media.id !== this.assetId),

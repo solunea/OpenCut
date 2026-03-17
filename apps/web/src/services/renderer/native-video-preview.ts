@@ -3,6 +3,7 @@ interface NativePreviewVideoState {
 	url: string;
 	ready: boolean;
 	readyPromise: Promise<void>;
+	pendingPlayPromise: Promise<void> | null;
 	pendingSeekPromise: Promise<void> | null;
 	pendingSeekTarget: number | null;
 }
@@ -52,6 +53,7 @@ export class NativeVideoPreview {
 			url,
 			ready: video.readyState >= 2,
 			readyPromise,
+			pendingPlayPromise: null,
 			pendingSeekPromise: null,
 			pendingSeekTarget: null,
 		};
@@ -143,6 +145,28 @@ export class NativeVideoPreview {
 		await state.pendingSeekPromise;
 	}
 
+	private async ensurePlaying({
+		state,
+	}: {
+		state: NativePreviewVideoState;
+	}): Promise<void> {
+		if (!state.video.paused) {
+			return;
+		}
+		if (state.pendingPlayPromise) {
+			await state.pendingPlayPromise;
+			return;
+		}
+		state.pendingPlayPromise = state.video
+			.play()
+			.then(() => undefined)
+			.catch(() => undefined)
+			.finally(() => {
+				state.pendingPlayPromise = null;
+			});
+		await state.pendingPlayPromise;
+	}
+
 	async getFrameSource({
 		mediaId,
 		url,
@@ -181,6 +205,7 @@ export class NativeVideoPreview {
 			if (!video.paused) {
 				video.pause();
 			}
+			state.pendingPlayPromise = null;
 			if (Math.abs(video.currentTime - targetTime) > 1 / 120) {
 				await this.seekToTime({ state, time: targetTime });
 			}
@@ -190,9 +215,7 @@ export class NativeVideoPreview {
 		if (Math.abs(video.currentTime - targetTime) > 0.12) {
 			await this.seekToTime({ state, time: targetTime });
 		}
-		if (video.paused) {
-			void video.play().catch(() => undefined);
-		}
+		await this.ensurePlaying({ state });
 		return video.readyState >= 2 ? video : null;
 	}
 
@@ -202,6 +225,7 @@ export class NativeVideoPreview {
 			return;
 		}
 		state.video.pause();
+		state.pendingPlayPromise = null;
 		state.video.removeAttribute("src");
 		state.video.load();
 		this.videos.delete(mediaId);
