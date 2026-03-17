@@ -762,6 +762,7 @@ export function applyCustomCursorEffect({
 	source,
 	width,
 	height,
+	renderScale,
 	sourceTime,
 	effectParams,
 	recordedCursor,
@@ -770,6 +771,7 @@ export function applyCustomCursorEffect({
 	source: CanvasImageSource;
 	width: number;
 	height: number;
+	renderScale?: number;
 	sourceTime: number;
 	effectParams: EffectParamValues;
 	recordedCursor?: RecordedCursorData;
@@ -811,7 +813,9 @@ export function applyCustomCursorEffect({
 	const pixelX = transformedPosition.x;
 	const pixelY = transformedPosition.y;
 
-	const size = clamp(resolveNumber({ value: effectParams.size, fallback: 28 }), 10, 96);
+	const effectiveRenderScale = clamp(renderScale ?? 1, 0.25, 1);
+	const baseSize = clamp(resolveNumber({ value: effectParams.size, fallback: 28 }), 10, 96);
+	const size = Math.max(1, baseSize * effectiveRenderScale);
 	const opacity = clamp(resolveNumber({ value: effectParams.opacity, fallback: 100 }) / 100, 0, 1);
 	const debugOverlay = resolveBoolean({
 		value: effectParams.debugOverlay,

@@ -567,6 +567,7 @@ export abstract class VisualNode<
 					source: currentResult,
 					width: pixelWidth,
 					height: pixelHeight,
+					renderScale: renderer.renderScale,
 					sourceTime: sourceLocalTime,
 					effectParams: resolvedParams,
 					recordedCursor: this.params.recordedCursor,

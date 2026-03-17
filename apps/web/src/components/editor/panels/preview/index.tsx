@@ -28,6 +28,7 @@ function usePreviewSize() {
 }
 
 const PREVIEW_RENDER_SCALES = [1, 0.85, 0.7, 0.55, 0.4] as const;
+const PREVIEW_IDLE_FULL_SCALE_DELAY_MS = 180;
 
 export function PreviewPanel() {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -96,6 +97,7 @@ function PreviewCanvas({
 	const adaptiveScaleIndexRef = useRef(0);
 	const slowFrameCountRef = useRef(0);
 	const fastFrameCountRef = useRef(0);
+	const idleFullScaleTimeoutRef = useRef<number | null>(null);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const containerSize = useContainerSize({ containerRef: outerContainerRef });
 	const editor = useEditor({ subscribeTo: ["project", "renderer"] });
@@ -107,6 +109,7 @@ function PreviewCanvas({
 			width: nativeWidth,
 			height: nativeHeight,
 			fps: activeProject.settings.fps,
+			mode: "preview",
 		});
 	}, [nativeWidth, nativeHeight, activeProject.settings.fps]);
 
@@ -133,8 +136,27 @@ function PreviewCanvas({
 		[renderer],
 	);
 
+	const clearIdleFullScaleTimeout = useCallback(() => {
+		if (idleFullScaleTimeoutRef.current !== null) {
+			window.clearTimeout(idleFullScaleTimeoutRef.current);
+			idleFullScaleTimeoutRef.current = null;
+		}
+	}, []);
+
+	const scheduleIdleFullScaleRestore = useCallback(() => {
+		clearIdleFullScaleTimeout();
+		if (adaptiveScaleIndexRef.current === 0) {
+			return;
+		}
+		idleFullScaleTimeoutRef.current = window.setTimeout(() => {
+			idleFullScaleTimeoutRef.current = null;
+			applyAdaptiveRenderScale({ nextIndex: 0 });
+		}, PREVIEW_IDLE_FULL_SCALE_DELAY_MS);
+	}, [applyAdaptiveRenderScale, clearIdleFullScaleTimeout]);
+
 	const handleRenderDuration = useCallback(
 		({ durationMs }: { durationMs: number }) => {
+			clearIdleFullScaleTimeout();
 			const frameBudgetMs = 1000 / Math.max(renderer.fps, 1);
 			const currentIndex = adaptiveScaleIndexRef.current;
 
@@ -169,16 +191,20 @@ function PreviewCanvas({
 
 			fastFrameCountRef.current = 0;
 		},
-		[applyAdaptiveRenderScale, renderer.fps],
+		[applyAdaptiveRenderScale, clearIdleFullScaleTimeout, renderer.fps],
 	);
 
 	useEffect(() => {
 		adaptiveScaleIndexRef.current = 0;
 		slowFrameCountRef.current = 0;
 		fastFrameCountRef.current = 0;
+		clearIdleFullScaleTimeout();
 		renderer.setRenderScale({ renderScale: PREVIEW_RENDER_SCALES[0] });
 		lastFrameRef.current = -1;
-	}, [renderer]);
+		return () => {
+			clearIdleFullScaleTimeout();
+		};
+	}, [clearIdleFullScaleTimeout, renderer]);
 
 	const displaySize = useMemo(() => {
 		if (
@@ -214,6 +240,9 @@ function PreviewCanvas({
 	const render = useCallback(() => {
 		if (canvasRef.current && renderTree && !renderingRef.current) {
 			const time = editor.playback.getCurrentTime();
+			renderer.setPlaybackState({
+				isPlaying: editor.playback.getIsPlaying(),
+			});
 			const lastFrameTime = getLastFrameTime({
 				duration: renderTree.duration,
 				fps: renderer.fps,
@@ -225,6 +254,7 @@ function PreviewCanvas({
 				frame !== lastFrameRef.current ||
 				renderTree !== lastSceneRef.current
 			) {
+				clearIdleFullScaleTimeout();
 				renderingRef.current = true;
 				const renderStartedAt = performance.now();
 				lastSceneRef.current = renderTree;
@@ -244,9 +274,18 @@ function PreviewCanvas({
 						});
 						renderingRef.current = false;
 					});
+			} else {
+				scheduleIdleFullScaleRestore();
 			}
 		}
-	}, [renderer, renderTree, editor.playback, handleRenderDuration]);
+	}, [
+		clearIdleFullScaleTimeout,
+		renderer,
+		renderTree,
+		editor.playback,
+		handleRenderDuration,
+		scheduleIdleFullScaleRestore,
+	]);
 
 	useRafLoop(render);
 

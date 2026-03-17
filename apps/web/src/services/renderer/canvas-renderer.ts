@@ -1,11 +1,13 @@
 import type { BaseNode } from "./nodes/base-node";
 
 export type RenderLayer = "main" | "backgroundBlur";
+export type RenderMode = "preview" | "quality";
 
 export type CanvasRendererParams = {
   width: number;
   height: number;
   fps: number;
+  mode?: RenderMode;
   renderScale?: number;
 };
 
@@ -16,14 +18,18 @@ export class CanvasRenderer {
   height: number;
   fps: number;
   renderLayer: RenderLayer;
+  mode: RenderMode;
   renderScale: number;
+  isPlaying: boolean;
 
-  constructor({ width, height, fps, renderScale = 1 }: CanvasRendererParams) {
+  constructor({ width, height, fps, mode = "quality", renderScale = 1 }: CanvasRendererParams) {
     this.width = width;
     this.height = height;
     this.fps = fps;
     this.renderLayer = "main";
+    this.mode = mode;
     this.renderScale = this.clampRenderScale({ renderScale });
+    this.isPlaying = false;
     this.canvas = this.createCanvas();
     this.context = this.createContext();
     this.applyBaseTransform();
@@ -33,7 +39,7 @@ export class CanvasRenderer {
     if (!Number.isFinite(renderScale)) {
       return 1;
     }
-    return Math.min(Math.max(renderScale, 0.25), 1);
+    return Math.min(Math.max(renderScale, 0.5), 1);
   }
 
   private getBackingWidth(): number {
@@ -108,6 +114,10 @@ export class CanvasRenderer {
     this.renderScale = nextRenderScale;
     this.rebuildCanvas();
     return true;
+  }
+
+  setPlaybackState({ isPlaying }: { isPlaying: boolean }) {
+    this.isPlaying = isPlaying;
   }
 
   private clear() {
