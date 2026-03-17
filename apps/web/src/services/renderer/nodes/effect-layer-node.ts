@@ -54,11 +54,13 @@ export class EffectLayerNode extends BaseNode<EffectLayerNodeParams> {
 				: Math.min(localTime / this.params.duration, 1);
 
 		const source = renderer.context.canvas as CanvasImageSource;
+		const rasterWidth = renderer.getRasterWidth();
+		const rasterHeight = renderer.getRasterHeight();
 
 		const effectResult = applyRendererEffect({
 			source,
-			width: renderer.width,
-			height: renderer.height,
+			width: rasterWidth,
+			height: rasterHeight,
 			effectType: this.params.effectType,
 			effectParams: this.params.effectParams,
 			localTime,

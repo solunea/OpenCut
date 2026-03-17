@@ -418,7 +418,12 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 		// Effects path: render text to a same-size offscreen canvas so the blur
 		// can spread into the surrounding transparent area without hard clipping.
-		const offscreen = createOffscreenCanvas({ width: renderer.width, height: renderer.height });
+		const rasterWidth = renderer.getRasterWidth();
+		const rasterHeight = renderer.getRasterHeight();
+		const offscreen = createOffscreenCanvas({
+			width: rasterWidth,
+			height: rasterHeight,
+		});
 		const offscreenCtx = offscreen.getContext("2d") as OffscreenCanvasRenderingContext2D | null;
 
 		if (!offscreenCtx) {
@@ -431,6 +436,7 @@ export class TextNode extends BaseNode<TextNodeParams> {
 			return;
 		}
 
+		renderer.prepareContext({ context: offscreenCtx });
 		offscreenCtx.save();
 		applyTransform(offscreenCtx);
 		drawContent(offscreenCtx);
@@ -447,8 +453,8 @@ export class TextNode extends BaseNode<TextNodeParams> {
 				this.params.duration <= 0 ? 1 : Math.min(localTime / this.params.duration, 1);
 			currentSource = applyRendererEffect({
 				source: currentSource,
-				width: renderer.width,
-				height: renderer.height,
+				width: rasterWidth,
+				height: rasterHeight,
 				effectType: effect.type,
 				effectParams: resolvedParams,
 				localTime,
@@ -460,7 +466,17 @@ export class TextNode extends BaseNode<TextNodeParams> {
 		renderer.context.save();
 		renderer.context.globalCompositeOperation = blendMode;
 		renderer.context.globalAlpha = renderedOpacity;
-		renderer.context.drawImage(currentSource, 0, 0);
+		renderer.context.drawImage(
+			currentSource,
+			0,
+			0,
+			rasterWidth,
+			rasterHeight,
+			0,
+			0,
+			renderer.width,
+			renderer.height,
+		);
 		renderer.context.restore();
 	}
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import useDeepCompareEffect from "use-deep-compare-effect";
 import { useEditor } from "@/hooks/use-editor";
 import { useRafLoop } from "@/hooks/use-raf-loop";
@@ -26,6 +26,8 @@ function usePreviewSize() {
 		height: activeProject?.settings.canvasSize.height,
 	};
 }
+
+const PREVIEW_RENDER_SCALES = [1, 0.85, 0.7, 0.55, 0.4] as const;
 
 export function PreviewPanel() {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -91,6 +93,9 @@ function PreviewCanvas({
 	const lastFrameRef = useRef(-1);
 	const lastSceneRef = useRef<RootNode | null>(null);
 	const renderingRef = useRef(false);
+	const adaptiveScaleIndexRef = useRef(0);
+	const slowFrameCountRef = useRef(0);
+	const fastFrameCountRef = useRef(0);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const containerSize = useContainerSize({ containerRef: outerContainerRef });
 	const editor = useEditor({ subscribeTo: ["project", "renderer"] });
@@ -104,6 +109,76 @@ function PreviewCanvas({
 			fps: activeProject.settings.fps,
 		});
 	}, [nativeWidth, nativeHeight, activeProject.settings.fps]);
+
+	const applyAdaptiveRenderScale = useCallback(
+		({ nextIndex }: { nextIndex: number }) => {
+			const boundedIndex = Math.min(
+				Math.max(nextIndex, 0),
+				PREVIEW_RENDER_SCALES.length - 1,
+			);
+			if (boundedIndex === adaptiveScaleIndexRef.current) {
+				return;
+			}
+			adaptiveScaleIndexRef.current = boundedIndex;
+			slowFrameCountRef.current = 0;
+			fastFrameCountRef.current = 0;
+			if (
+				renderer.setRenderScale({
+					renderScale: PREVIEW_RENDER_SCALES[boundedIndex],
+				})
+			) {
+				lastFrameRef.current = -1;
+			}
+		},
+		[renderer],
+	);
+
+	const handleRenderDuration = useCallback(
+		({ durationMs }: { durationMs: number }) => {
+			const frameBudgetMs = 1000 / Math.max(renderer.fps, 1);
+			const currentIndex = adaptiveScaleIndexRef.current;
+
+			if (durationMs > frameBudgetMs * 2.2) {
+				applyAdaptiveRenderScale({ nextIndex: currentIndex + 2 });
+				return;
+			}
+
+			if (durationMs > frameBudgetMs * 1.15) {
+				slowFrameCountRef.current += 1;
+				fastFrameCountRef.current = 0;
+				if (slowFrameCountRef.current >= 2) {
+					applyAdaptiveRenderScale({ nextIndex: currentIndex + 1 });
+				}
+				return;
+			}
+
+			slowFrameCountRef.current = 0;
+
+			if (currentIndex === 0) {
+				fastFrameCountRef.current = 0;
+				return;
+			}
+
+			if (durationMs < frameBudgetMs * 0.65) {
+				fastFrameCountRef.current += 1;
+				if (fastFrameCountRef.current >= 24) {
+					applyAdaptiveRenderScale({ nextIndex: currentIndex - 1 });
+				}
+				return;
+			}
+
+			fastFrameCountRef.current = 0;
+		},
+		[applyAdaptiveRenderScale, renderer.fps],
+	);
+
+	useEffect(() => {
+		adaptiveScaleIndexRef.current = 0;
+		slowFrameCountRef.current = 0;
+		fastFrameCountRef.current = 0;
+		renderer.setRenderScale({ renderScale: PREVIEW_RENDER_SCALES[0] });
+		lastFrameRef.current = -1;
+	}, [renderer]);
 
 	const displaySize = useMemo(() => {
 		if (
@@ -151,6 +226,7 @@ function PreviewCanvas({
 				renderTree !== lastSceneRef.current
 			) {
 				renderingRef.current = true;
+				const renderStartedAt = performance.now();
 				lastSceneRef.current = renderTree;
 				lastFrameRef.current = frame;
 				renderer
@@ -159,12 +235,18 @@ function PreviewCanvas({
 						time: renderTime,
 						targetCanvas: canvasRef.current,
 					})
-					.then(() => {
+					.catch((error) => {
+						console.error("Failed to render preview frame", error);
+					})
+					.finally(() => {
+						handleRenderDuration({
+							durationMs: performance.now() - renderStartedAt,
+						});
 						renderingRef.current = false;
 					});
 			}
 		}
-	}, [renderer, renderTree, editor.playback]);
+	}, [renderer, renderTree, editor.playback, handleRenderDuration]);
 
 	useRafLoop(render);
 

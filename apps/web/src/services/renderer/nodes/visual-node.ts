@@ -453,8 +453,14 @@ export abstract class VisualNode<
 		);
 		const scaledWidth = sourceWidth * containScale * transform.scale;
 		const scaledHeight = sourceHeight * containScale * transform.scale;
-		const pixelWidth = Math.max(1, Math.round(scaledWidth));
-		const pixelHeight = Math.max(1, Math.round(scaledHeight));
+		const pixelWidth = Math.max(
+			1,
+			Math.round(scaledWidth * renderer.renderScale),
+		);
+		const pixelHeight = Math.max(
+			1,
+			Math.round(scaledHeight * renderer.renderScale),
+		);
 		const x = renderer.width / 2 + transform.position.x - scaledWidth / 2;
 		const y = renderer.height / 2 + transform.position.y - scaledHeight / 2;
 		const enabledEffects =

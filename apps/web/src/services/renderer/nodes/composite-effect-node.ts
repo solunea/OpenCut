@@ -19,14 +19,17 @@ export class CompositeEffectNode extends BaseNode<CompositeEffectNodeParams> {
 		renderer: CanvasRenderer;
 		time: number;
 	}): Promise<void> {
+		const rasterWidth = renderer.getRasterWidth();
+		const rasterHeight = renderer.getRasterHeight();
 		const offscreen = createOffscreenCanvas({
-			width: renderer.width,
-			height: renderer.height,
+			width: rasterWidth,
+			height: rasterHeight,
 		});
 		const offscreenCtx = offscreen.getContext("2d") as OffscreenCanvasRenderingContext2D | null;
 		if (!offscreenCtx) {
 			throw new Error("failed to get offscreen canvas context");
 		}
+		renderer.prepareContext({ context: offscreenCtx });
 
 		const originalContext = renderer.context;
 		const originalRenderLayer = renderer.renderLayer;
@@ -48,8 +51,8 @@ export class CompositeEffectNode extends BaseNode<CompositeEffectNodeParams> {
 
 		const effectResult = applyRendererEffect({
 			source: offscreen as CanvasImageSource,
-			width: renderer.width,
-			height: renderer.height,
+			width: rasterWidth,
+			height: rasterHeight,
 			effectType: this.params.effectType,
 			effectParams: this.params.effectParams,
 			localTime: time,
@@ -62,8 +65,8 @@ export class CompositeEffectNode extends BaseNode<CompositeEffectNodeParams> {
 			effectResult,
 			0,
 			0,
-			renderer.width,
-			renderer.height,
+			rasterWidth,
+			rasterHeight,
 			offsetX,
 			offsetY,
 			scaledWidth,
