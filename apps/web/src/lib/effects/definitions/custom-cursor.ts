@@ -45,21 +45,6 @@ export const customCursorEffectDefinition: EffectDefinition = {
 			step: 1,
 		},
 		{
-			key: "removeNativeCursor",
-			label: "Remove Native",
-			type: "boolean",
-			default: true,
-		},
-		{
-			key: "cleanupSize",
-			label: "Cleanup",
-			type: "number",
-			default: 130,
-			min: 60,
-			max: 220,
-			step: 1,
-		},
-		{
 			key: "trackingSmoothness",
 			label: "Tracking",
 			type: "number",
