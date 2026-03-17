@@ -12,6 +12,8 @@
 	const MESSAGE_NAMESPACE = "opencut-cursor";
 	const PAGE_BRIDGE_NAMESPACE = "opencut-cursor-bridge";
 	const FRAME_RELAY_NAMESPACE = "opencut-cursor-frame-relay";
+	const CAPTURE_CURSOR_STYLE_ID = "opencut-capture-cursor-style";
+	const CAPTURE_CURSOR_DOT_ID = "opencut-capture-cursor-dot";
 
 	const state = {
 		isTracking: false,
@@ -65,6 +67,88 @@
 		return Math.max(0, (performance.now() - state.startedAtPerf) / 1000);
 	}
 
+	function removeCaptureCursorAppearance() {
+		document.getElementById(CAPTURE_CURSOR_STYLE_ID)?.remove();
+		document.getElementById(CAPTURE_CURSOR_DOT_ID)?.remove();
+	}
+
+	function ensureCaptureCursorAppearance() {
+		let styleElement = document.getElementById(CAPTURE_CURSOR_STYLE_ID);
+		if (!(styleElement instanceof HTMLStyleElement)) {
+			styleElement = document.createElement("style");
+			styleElement.id = CAPTURE_CURSOR_STYLE_ID;
+			styleElement.textContent = `
+				html,
+				body,
+				body * {
+					cursor: none !important;
+				}
+
+				#${CAPTURE_CURSOR_DOT_ID} {
+					position: fixed !important;
+					left: 0;
+					top: 0;
+					width: 4px;
+					height: 4px;
+					border-radius: 9999px;
+					background: rgba(255, 255, 255, 0.48);
+					box-shadow:
+						0 0 0 1px rgba(15, 23, 42, 0.22),
+						0 0 6px rgba(255, 255, 255, 0.12);
+					transform: translate(-50%, -50%);
+					pointer-events: none !important;
+					z-index: 2147483647 !important;
+					display: none;
+				}
+			`;
+			(document.head || document.documentElement).append(styleElement);
+		}
+
+		let cursorElement = document.getElementById(CAPTURE_CURSOR_DOT_ID);
+		if (!(cursorElement instanceof HTMLElement)) {
+			cursorElement = document.createElement("div");
+			cursorElement.id = CAPTURE_CURSOR_DOT_ID;
+			cursorElement.setAttribute("aria-hidden", "true");
+			document.documentElement.append(cursorElement);
+		}
+
+		return cursorElement;
+	}
+
+	function updateCaptureCursorPosition(x, y) {
+		if (!state.shouldHideNativeCursor) {
+			return;
+		}
+
+		const cursorElement = ensureCaptureCursorAppearance();
+		if (!(cursorElement instanceof HTMLElement)) {
+			return;
+		}
+
+		cursorElement.style.display = "block";
+		cursorElement.style.left = `${x}px`;
+		cursorElement.style.top = `${y}px`;
+	}
+
+	function syncCaptureCursorAppearance() {
+		if (!state.shouldHideNativeCursor) {
+			removeCaptureCursorAppearance();
+			return;
+		}
+
+		const cursorElement = ensureCaptureCursorAppearance();
+		if (!(cursorElement instanceof HTMLElement)) {
+			return;
+		}
+
+		if (!state.lastPointer) {
+			cursorElement.style.display = "none";
+			return;
+		}
+
+		updateCaptureCursorPosition(state.lastPointer.x, state.lastPointer.y);
+	}
+
 	function isTopFrame() {
 		try {
 			return window.top === window;
@@ -99,11 +183,13 @@
 		state.lastMoveX = null;
 		state.lastMoveY = null;
 		state.shouldHideNativeCursor = shouldHideNativeCursor;
+		syncCaptureCursorAppearance();
 	}
 
 	function stopTrackingState() {
 		state.isTracking = false;
 		state.shouldHideNativeCursor = false;
+		removeCaptureCursorAppearance();
 	}
 
 	function broadcastFrameLifecycle(message) {
@@ -203,6 +289,7 @@
 			cursor: resolvedCursor,
 		};
 		state.lastButtons = resolvedButtons;
+		updateCaptureCursorPosition(safeX, safeY);
 	}
 
 	function relayTrackedEvent({

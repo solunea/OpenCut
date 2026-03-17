@@ -105,7 +105,7 @@ export function TabCaptureDialog({
 	onOpenChange,
 }: TabCaptureDialogProps) {
 	const [captureState, setCaptureState] = useState<CaptureState>("idle");
-	const [shouldHideNativeCursor, setShouldHideNativeCursor] = useState(false);
+	const [shouldHideNativeCursor, setShouldHideNativeCursor] = useState(true);
 	const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const recorderRef = useRef<MediaRecorder | null>(null);
@@ -253,11 +253,11 @@ export function TabCaptureDialog({
 				shouldHideNativeCursor,
 			});
 			if (shouldHideNativeCursor && appliedCursor !== undefined && appliedCursor !== "never") {
-				toast.warning("Browser did not fully hide the native cursor", {
+				toast.warning("Browser did not fully switch to the discrete capture cursor", {
 					description:
 						"The capture track is using cursor mode \"" +
 						appliedCursor +
-						'" instead of "never".',
+						'" instead of "never", so the native cursor may still appear.',
 				});
 			}
 			await startCursorTrackingCaptureSession({
@@ -368,9 +368,9 @@ export function TabCaptureDialog({
 						</div>
 						<div className="flex items-center justify-between rounded-lg border px-3 py-2">
 							<div className="flex flex-col gap-0.5">
-								<Label htmlFor="hide-native-cursor">Hide mouse cursor in tab capture</Label>
+								<Label htmlFor="hide-native-cursor">Use a tiny capture cursor dot</Label>
 								<span className="text-muted-foreground text-xs">
-									Disable this if you want the browser to include the native cursor in the recording.
+									Replace the native cursor with a near-invisible point that still shows up in recorded frames. Disable this if you want the browser cursor as-is.
 								</span>
 							</div>
 							<Switch
