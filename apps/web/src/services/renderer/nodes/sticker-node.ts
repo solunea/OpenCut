@@ -13,6 +13,23 @@ interface CachedStickerSource {
 }
 
 const stickerSourceCache = new Map<string, Promise<CachedStickerSource>>();
+const TRANSPARENT_STICKER_DATA_URL =
+	"data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1' viewBox='0 0 1 1'%3E%3C/svg%3E";
+
+function loadImage({
+	url,
+}: {
+	url: string;
+}): Promise<HTMLImageElement> {
+	const image = new Image();
+	image.crossOrigin = "anonymous";
+
+	return new Promise<HTMLImageElement>((resolve, reject) => {
+		image.onload = () => resolve(image);
+		image.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+		image.src = url;
+	});
+}
 
 function loadStickerSource(stickerId: string): Promise<CachedStickerSource> {
 	const cached = stickerSourceCache.get(stickerId);
@@ -24,16 +41,16 @@ function loadStickerSource(stickerId: string): Promise<CachedStickerSource> {
 			options: { width: 200, height: 200 },
 		});
 
-		const image = new Image();
-
-		await new Promise<void>((resolve, reject) => {
-			image.onload = () => resolve();
-			image.onerror = () =>
-				reject(new Error(`Failed to load sticker: ${stickerId}`));
-			image.src = url;
-		});
-
-		return { source: image, width: 200, height: 200 };
+		try {
+			const image = await loadImage({ url });
+			return { source: image, width: 200, height: 200 };
+		} catch (error) {
+			console.warn(`Failed to load sticker asset for ${stickerId}:`, error);
+			const fallbackImage = await loadImage({
+				url: TRANSPARENT_STICKER_DATA_URL,
+			});
+			return { source: fallbackImage, width: 1, height: 1 };
+		}
 	})();
 
 	stickerSourceCache.set(stickerId, promise);

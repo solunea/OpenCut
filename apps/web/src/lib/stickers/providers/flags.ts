@@ -8,7 +8,7 @@ import type {
 const FLAGS_PROVIDER_ID = "flags";
 const FLAGS_DATASET_URL = "/countries.json";
 const DEFAULT_SEARCH_LIMIT = 100;
-const DEFAULT_FLAGS_BASE_URL = "/flags";
+const DEFAULT_FLAGS_BASE_URL = "https://flagcdn.com";
 
 type CountryRecord = {
 	name: string;
@@ -25,7 +25,7 @@ function getFlagsBaseUrl(): string {
 }
 
 function buildFlagUrl({ code }: { code: string }): string {
-	const normalizedCode = code.toUpperCase();
+	const normalizedCode = code.trim().toLowerCase();
 	return `${getFlagsBaseUrl()}/${encodeURIComponent(normalizedCode)}.svg`;
 }
 

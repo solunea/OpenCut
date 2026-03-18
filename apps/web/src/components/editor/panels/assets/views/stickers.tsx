@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PanelView } from "@/components/editor/panels/assets/views/base-view";
 import { DraggableItem } from "@/components/editor/panels/assets/draggable-item";
-import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
 	Tooltip,
 	TooltipContent,
@@ -23,7 +23,6 @@ import {
 	HappyIcon,
 	ClockIcon,
 	MultiplicationSignIcon,
-	Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Spinner } from "@/components/ui/spinner";
@@ -34,26 +33,37 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { OcSlidersVerticalIcon } from "@opencut/ui/icons";
 import type { StickerCategory } from "@/types/stickers";
 import { STICKER_CATEGORIES } from "@/constants/sticker-constants";
 import { parseStickerId } from "@/lib/stickers/sticker-id";
 
 export function StickersView() {
-	const { selectedCategory, setSelectedCategory } = useStickersStore();
+	const { searchQuery, selectedCategory, setSearchQuery, setSelectedCategory } =
+		useStickersStore();
 
 	return (
 		<PanelView
 			title="Stickers"
 			actions={
-				<div className="flex items-center">
+				<div className="flex items-center gap-1.5">
+					<Input
+						placeholder="Search stickers"
+						size="sm"
+						value={searchQuery}
+						onChange={({ currentTarget }) =>
+							setSearchQuery({ query: currentTarget.value })
+						}
+						showClearIcon
+						onClear={() => setSearchQuery({ query: "" })}
+						containerClassName="w-36"
+					/>
 					<Select
 						value={selectedCategory}
 						onValueChange={(value: StickerCategory) =>
 							setSelectedCategory({ category: value })
 						}
 					>
-						<SelectTrigger variant="outline" size="sm" className="mr-1.5">
+						<SelectTrigger variant="outline" size="sm" className="w-28">
 							<SelectValue placeholder="All" />
 						</SelectTrigger>
 						<SelectContent>
@@ -64,14 +74,6 @@ export function StickersView() {
 							))}
 						</SelectContent>
 					</Select>
-
-					<Button variant="ghost" size="icon">
-						<HugeiconsIcon icon={Search01Icon} className="!size-3.5" />
-					</Button>
-
-					<Button variant="ghost" size="icon">
-						<OcSlidersVerticalIcon className="!size-3.5" />
-					</Button>
 				</div>
 			}
 		>
@@ -125,20 +127,51 @@ function EmptyView({ message }: { message: string }) {
 function StickersContentView() {
 	const {
 		searchQuery,
+		selectedCategory,
 		viewMode,
+		browseResults,
 		searchResults,
 		recentStickers,
+		isBrowsing,
 		isSearching,
+		browseStickers,
+		searchStickers,
 		clearRecentStickers,
 	} = useStickersStore();
 
+	useEffect(() => {
+		let shouldIgnore = false;
+
+		const timeoutId = window.setTimeout(async () => {
+			if (shouldIgnore) {
+				return;
+			}
+
+			if (searchQuery.trim()) {
+				await searchStickers({ query: searchQuery });
+				return;
+			}
+
+			await browseStickers();
+		}, 150);
+
+		return () => {
+			shouldIgnore = true;
+			window.clearTimeout(timeoutId);
+		};
+	}, [browseStickers, searchQuery, searchStickers, selectedCategory]);
+
 	const itemsToDisplay = useMemo(() => {
+		if (viewMode === "browse" && browseResults) {
+			return browseResults.items;
+		}
+
 		if (viewMode === "search" && searchResults) {
 			return searchResults.items;
 		}
 
 		return [];
-	}, [viewMode, searchResults]);
+	}, [browseResults, viewMode, searchResults]);
 
 	const recentStickerItems = useMemo(() => {
 		const items: StickerData[] = [];
@@ -154,7 +187,7 @@ function StickersContentView() {
 	return (
 		<div className="flex h-full flex-col gap-4">
 			{recentStickerItems.length > 0 && viewMode === "browse" && (
-				<div className="flex h-full flex-col gap-2">
+				<div className="flex flex-col gap-2">
 					<div className="flex items-center gap-2">
 						<HugeiconsIcon
 							icon={ClockIcon}
@@ -182,6 +215,32 @@ function StickersContentView() {
 						</TooltipProvider>
 					</div>
 					<StickerGrid items={recentStickerItems.slice(0, 12)} shouldCapSize />
+				</div>
+			)}
+
+			{viewMode === "browse" && (
+				<div className="h-full">
+					{isBrowsing ? (
+						<div className="flex items-center justify-center py-8">
+							<Spinner className="text-muted-foreground size-6" />
+						</div>
+					) : itemsToDisplay.length ? (
+						<div className="flex flex-col gap-3">
+							<div className="flex items-center justify-between">
+								<span className="text-muted-foreground text-sm">
+									{browseResults?.total ?? itemsToDisplay.length} stickers
+								</span>
+								<span className="text-muted-foreground text-xs capitalize">
+									{STICKER_CATEGORIES[selectedCategory]}
+								</span>
+							</div>
+							<StickerGrid items={itemsToDisplay} shouldCapSize />
+						</div>
+					) : (
+						<EmptyView
+							message={`No stickers available in ${STICKER_CATEGORIES[selectedCategory].toLowerCase()}`}
+						/>
+					)}
 				</div>
 			)}
 
