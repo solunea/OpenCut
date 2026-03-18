@@ -873,6 +873,9 @@ function ZoomEaseOverlay({
 	const exitPercent = clamp((bounds.exitSeconds / displayedDuration) * 100, 0, 100);
 	const rightStartPercent = clamp(100 - exitPercent, 0, 100);
 	const canShowLabels = entryPercent >= 8 || exitPercent >= 8;
+	const shouldShowEntry = element.startTime > 1;
+	const shouldShowInLabel = entryPercent >= 10 && element.startTime > 1;
+	const shouldShowOutLabel = exitPercent >= 10;
 
 	return (
 		<div
@@ -880,59 +883,67 @@ function ZoomEaseOverlay({
 			className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-sm"
 		>
 			<div className="absolute left-1 right-1 top-1/2 h-4 -translate-y-1/2 rounded-md ring-1 ring-cyan-300/35 ring-inset" />
-			<div
-				className="absolute left-0 top-1/2 h-4 -translate-y-1/2 rounded-l-md bg-cyan-400/16"
-				style={{ width: `${entryPercent}%` }}
-			/>
+			{shouldShowEntry && (
+				<div
+					className="absolute left-0 top-1/2 h-4 -translate-y-1/2 rounded-l-md bg-cyan-400/16"
+					style={{ width: `${entryPercent}%` }}
+				/>
+			)}
 			<div
 				className="absolute top-1/2 h-4 -translate-y-1/2 rounded-r-md bg-cyan-400/16"
 				style={{ left: `${rightStartPercent}%`, width: `${exitPercent}%` }}
 			/>
 			<div className="absolute inset-x-2 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-black/18">
-				<div
-					className="absolute left-0 top-0 h-full rounded-full bg-cyan-300/95 shadow-[0_0_8px_rgba(34,211,238,0.25)]"
-					style={{ width: `${entryPercent}%` }}
-				/>
+				{shouldShowEntry && (
+					<div
+						className="absolute left-0 top-0 h-full rounded-full bg-cyan-300/95 shadow-[0_0_8px_rgba(34,211,238,0.25)]"
+						style={{ width: `${entryPercent}%` }}
+					/>
+				)}
 				<div
 					className="absolute top-0 h-full rounded-full bg-cyan-300/95 shadow-[0_0_8px_rgba(34,211,238,0.25)]"
 					style={{ left: `${rightStartPercent}%`, width: `${exitPercent}%` }}
 				/>
 			</div>
-			<div
-				className="absolute top-1/2 h-5 w-px -translate-y-1/2 bg-cyan-100/90 shadow-[0_0_0_1px_rgba(0,0,0,0.18)]"
-				style={{ left: `${entryPercent}%` }}
-			/>
+			{shouldShowEntry && (
+				<div
+					className="absolute top-1/2 h-5 w-px -translate-y-1/2 bg-cyan-100/90 shadow-[0_0_0_1px_rgba(0,0,0,0.18)]"
+					style={{ left: `${entryPercent}%` }}
+				/>
+			)}
 			<div
 				className="absolute top-1/2 h-5 w-px -translate-y-1/2 bg-cyan-100/90 shadow-[0_0_0_1px_rgba(0,0,0,0.18)]"
 				style={{ left: `${rightStartPercent}%` }}
 			/>
 			{canShowLabels && (
 				<>
-					{entryPercent >= 10 && (
+					{shouldShowInLabel && (
 						<div className="absolute left-1.5 top-0.5 rounded-md border border-cyan-300/45 bg-black/55 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-cyan-100 backdrop-blur-sm">
 							In
 						</div>
 					)}
-					{exitPercent >= 10 && (
+					{shouldShowOutLabel && (
 						<div className="absolute right-1.5 top-0.5 rounded-md border border-cyan-300/45 bg-black/55 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-cyan-100 backdrop-blur-sm">
 							Out
 						</div>
 					)}
 				</>
 			)}
-			<button
-				type="button"
-				className="pointer-events-auto absolute top-1/2 h-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize"
-				style={{ left: `${entryPercent}%`, width: `${ZOOM_EASE_HANDLE_HIT_WIDTH_PX}px` }}
-				onMouseDown={(event) => {
-					event.stopPropagation();
-					event.preventDefault();
-					setDragSide("left");
-				}}
-				aria-label={`${definition.name} ease in handle`}
-			>
-				<span className="pointer-events-none absolute left-1/2 top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100 bg-cyan-300 shadow-[0_0_0_2px_rgba(8,15,25,0.35)]" />
-			</button>
+			{shouldShowEntry && (
+				<button
+					type="button"
+					className="pointer-events-auto absolute top-1/2 h-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize"
+					style={{ left: `${entryPercent}%`, width: `${ZOOM_EASE_HANDLE_HIT_WIDTH_PX}px` }}
+					onMouseDown={(event) => {
+						event.stopPropagation();
+						event.preventDefault();
+						setDragSide("left");
+					}}
+					aria-label={`${definition.name} ease in handle`}
+				>
+					<span className="pointer-events-none absolute left-1/2 top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100 bg-cyan-300 shadow-[0_0_0_2px_rgba(8,15,25,0.35)]" />
+				</button>
+			)}
 			<button
 				type="button"
 				className="pointer-events-auto absolute top-1/2 h-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize"
