@@ -29,6 +29,7 @@
 		shouldHideNativeCursor: false,
 		cursorAppearanceObserver: null,
 		hiddenCursorElements: new Map(),
+		activeSuppressedCursorElements: [],
 	};
 
 	function clamp(value, min, max) {
@@ -131,17 +132,42 @@
 		}
 
 		state.hiddenCursorElements.clear();
+		state.activeSuppressedCursorElements = [];
+	}
+
+	function restoreCursorSuppressionChain() {
+		for (const element of state.activeSuppressedCursorElements) {
+			const previous = state.hiddenCursorElements.get(element);
+			if (!(element instanceof Element) || !element.style || !previous) {
+				continue;
+			}
+
+			if (previous.value) {
+				element.style.setProperty("cursor", previous.value, previous.priority || undefined);
+			} else {
+				element.style.removeProperty("cursor");
+			}
+
+			state.hiddenCursorElements.delete(element);
+		}
+
+		state.activeSuppressedCursorElements = [];
 	}
 
 	function suppressCursorOnTargetChain(target) {
-		hideCursorInlineOnElement(document.documentElement);
+		restoreCursorSuppressionChain();
+
+		const elements = [];
+		if (document.documentElement) {
+			elements.push(document.documentElement);
+		}
 		if (document.body) {
-			hideCursorInlineOnElement(document.body);
+			elements.push(document.body);
 		}
 
 		let current = target instanceof Element ? target : null;
 		while (current) {
-			hideCursorInlineOnElement(current);
+			elements.push(current);
 			const rootNode = current.getRootNode?.();
 			if (rootNode instanceof ShadowRoot && rootNode.host instanceof Element) {
 				current = rootNode.host;
@@ -149,6 +175,12 @@
 			}
 			current = current.parentElement;
 		}
+
+		const uniqueElements = [...new Set(elements)];
+		for (const element of uniqueElements) {
+			hideCursorInlineOnElement(element);
+		}
+		state.activeSuppressedCursorElements = uniqueElements;
 	}
 
 	function ensureShadowCursorAppearance(shadowRoot) {
@@ -209,7 +241,9 @@
 				return;
 			}
 
-			ensureCaptureCursorAppearance();
+			if (!document.getElementById(CAPTURE_CURSOR_STYLE_ID)) {
+				ensureCaptureCursorAppearance();
+			}
 			for (const mutation of mutations) {
 				for (const node of mutation.addedNodes) {
 					if (node instanceof Element) {
@@ -271,13 +305,17 @@
 	}
 
 	function ensureCaptureCursorAppearance() {
+		const shouldInitializeGlobalSuppression = !state.cursorAppearanceObserver;
 		let styleElement = document.getElementById(CAPTURE_CURSOR_STYLE_ID);
 		if (!(styleElement instanceof HTMLStyleElement)) {
 			styleElement = document.createElement("style");
 			styleElement.id = CAPTURE_CURSOR_STYLE_ID;
 			(document.head || document.documentElement).append(styleElement);
 		}
-		styleElement.textContent = getCaptureCursorCss({ includeDot: true });
+		const nextCss = getCaptureCursorCss({ includeDot: true });
+		if (styleElement.textContent !== nextCss) {
+			styleElement.textContent = nextCss;
+		}
 
 		let cursorElement = document.getElementById(CAPTURE_CURSOR_DOT_ID);
 		if (!(cursorElement instanceof HTMLElement)) {
@@ -287,11 +325,13 @@
 			document.documentElement.append(cursorElement);
 		}
 
-		startCursorAppearanceObserver();
-		syncOpenShadowRoots(document);
-		hideCursorInlineOnElement(document.documentElement);
-		if (document.body) {
-			hideCursorInlineOnElement(document.body);
+		if (shouldInitializeGlobalSuppression) {
+			startCursorAppearanceObserver();
+			syncOpenShadowRoots(document);
+			hideCursorInlineOnElement(document.documentElement);
+			if (document.body) {
+				hideCursorInlineOnElement(document.body);
+			}
 		}
 
 		return cursorElement;
@@ -430,6 +470,7 @@
 		x,
 		y,
 		cursor,
+		target,
 		button,
 		buttons,
 		deltaX,
@@ -513,7 +554,7 @@
 			cursor: resolvedCursor,
 		};
 		state.lastButtons = resolvedButtons;
-		updateCaptureCursorPosition(safeX, safeY, null);
+		updateCaptureCursorPosition(safeX, safeY, target ?? null);
 	}
 
 	function relayTrackedEvent({
@@ -521,6 +562,7 @@
 		x,
 		y,
 		cursor,
+		target,
 		button,
 		buttons,
 		deltaX,
@@ -538,6 +580,7 @@
 				x,
 				y,
 				cursor,
+				target,
 				button,
 				buttons,
 				deltaX,
@@ -650,9 +693,9 @@
 				x: event.clientX,
 				y: event.clientY,
 				cursor: getCursor(target),
+				target,
 				buttons: event.buttons,
 			});
-			updateCaptureCursorPosition(event.clientX, event.clientY, target);
 		},
 		{ capture: true, passive: true },
 	);
@@ -666,10 +709,10 @@
 				x: event.clientX,
 				y: event.clientY,
 				cursor: getCursor(target),
+				target,
 				button: event.button,
 				buttons: event.buttons,
 			});
-			updateCaptureCursorPosition(event.clientX, event.clientY, target);
 		},
 		{ capture: true, passive: true },
 	);
@@ -683,10 +726,10 @@
 				x: event.clientX,
 				y: event.clientY,
 				cursor: getCursor(target),
+				target,
 				button: event.button,
 				buttons: event.buttons,
 			});
-			updateCaptureCursorPosition(event.clientX, event.clientY, target);
 		},
 		{ capture: true, passive: true },
 	);
@@ -700,13 +743,13 @@
 				x: event.clientX,
 				y: event.clientY,
 				cursor: getCursor(target),
+				target,
 				buttons: event.buttons,
 				deltaX: event.deltaX,
 				deltaY: event.deltaY,
 				scrollX: window.scrollX,
 				scrollY: window.scrollY,
 			});
-			updateCaptureCursorPosition(event.clientX, event.clientY, target);
 		},
 		{ capture: true, passive: true },
 	);
