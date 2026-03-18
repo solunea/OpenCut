@@ -466,6 +466,7 @@ export function TimelineElement({
 						onElementMouseDown={onElementMouseDown}
 						handleResizeStart={handleResizeStart}
 						isDropTarget={isDropTarget}
+						displayedStartTime={displayedStartTime}
 						displayedDuration={displayedDuration}
 						displayedTrimStart={displayedTrimStart}
 						displayedTrimEnd={displayedTrimEnd}
@@ -557,6 +558,7 @@ function ElementInner({
 	onElementMouseDown,
 	handleResizeStart,
 	isDropTarget = false,
+	displayedStartTime,
 	displayedDuration,
 	displayedTrimStart,
 	displayedTrimEnd,
@@ -580,6 +582,7 @@ function ElementInner({
 		side: "left" | "right";
 	}) => void;
 	isDropTarget?: boolean;
+	displayedStartTime: number;
 	displayedDuration: number;
 	displayedTrimStart: number;
 	displayedTrimEnd: number;
@@ -613,8 +616,7 @@ function ElementInner({
 						: undefined
 				}
 			>
-				<button
-					type="button"
+				<div
 					className="absolute inset-0 size-full cursor-pointer flex flex-col"
 					onClick={(event) => {
 						closeClipEffects();
@@ -638,6 +640,7 @@ function ElementInner({
 								element={element as ZoomTimelineElement}
 								trackId={track.id}
 								isSelected={isSelected}
+								displayedStartTime={displayedStartTime}
 								displayedDuration={displayedDuration}
 							/>
 						)}
@@ -648,7 +651,7 @@ function ElementInner({
 							displayedFreezeFrameEnd={displayedFreezeFrameEnd}
 						/>
 					</div>
-				</button>
+				</div>
 			</div>
 
 			{element.type !== "audio" && element.type !== "effect" && (
@@ -710,11 +713,13 @@ function ZoomEaseOverlay({
 	element,
 	trackId,
 	isSelected,
+	displayedStartTime,
 	displayedDuration,
 }: {
 	element: ZoomTimelineElement;
 	trackId: string;
 	isSelected: boolean;
+	displayedStartTime: number;
 	displayedDuration: number;
 }) {
 	const editor = useEditor();
@@ -873,8 +878,9 @@ function ZoomEaseOverlay({
 	const exitPercent = clamp((bounds.exitSeconds / displayedDuration) * 100, 0, 100);
 	const rightStartPercent = clamp(100 - exitPercent, 0, 100);
 	const canShowLabels = entryPercent >= 8 || exitPercent >= 8;
-	const shouldShowEntry = element.startTime > 1;
-	const shouldShowInLabel = entryPercent >= 10 && element.startTime > 1;
+	const startsAtTimelineOrigin = displayedStartTime <= 0.001;
+	const shouldShowEntry = !startsAtTimelineOrigin;
+	const shouldShowInLabel = entryPercent >= 10 && !startsAtTimelineOrigin;
 	const shouldShowOutLabel = exitPercent >= 10;
 
 	return (
@@ -930,8 +936,8 @@ function ZoomEaseOverlay({
 				</>
 			)}
 			{shouldShowEntry && (
-				<button
-					type="button"
+				<div
+					role="presentation"
 					className="pointer-events-auto absolute top-1/2 h-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize"
 					style={{ left: `${entryPercent}%`, width: `${ZOOM_EASE_HANDLE_HIT_WIDTH_PX}px` }}
 					onMouseDown={(event) => {
@@ -942,10 +948,10 @@ function ZoomEaseOverlay({
 					aria-label={`${definition.name} ease in handle`}
 				>
 					<span className="pointer-events-none absolute left-1/2 top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100 bg-cyan-300 shadow-[0_0_0_2px_rgba(8,15,25,0.35)]" />
-				</button>
+				</div>
 			)}
-			<button
-				type="button"
+			<div
+				role="presentation"
 				className="pointer-events-auto absolute top-1/2 h-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize"
 				style={{ left: `${rightStartPercent}%`, width: `${ZOOM_EASE_HANDLE_HIT_WIDTH_PX}px` }}
 				onMouseDown={(event) => {
@@ -956,7 +962,7 @@ function ZoomEaseOverlay({
 				aria-label={`${definition.name} ease out handle`}
 			>
 				<span className="pointer-events-none absolute left-1/2 top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100 bg-cyan-300 shadow-[0_0_0_2px_rgba(8,15,25,0.35)]" />
-			</button>
+			</div>
 		</div>
 	);
 }
