@@ -12,23 +12,74 @@ export interface VideoNodeParams extends VisualNodeParams {
 }
 
 export class VideoNode extends VisualNode<VideoNodeParams> {
-	private hasPreviewNativeFallbackEffects({ time }: { time: number }): boolean {
-		const enabledEffects = this.params.effects?.filter((effect) => effect.enabled) ?? [];
-		if (enabledEffects.length === 0) {
+	private previewFallbackStaticDecision: boolean | null = null;
+
+	private previewFallbackFrameDecisions = new Map<number, boolean>();
+
+	private getPreviewFallbackFrameKey({
+		animationLocalTime,
+		fps,
+	}: {
+		animationLocalTime: number;
+		fps: number;
+	}): number {
+		return Math.max(0, Math.floor(animationLocalTime * Math.max(fps, 1)));
+	}
+
+	private cachePreviewFallbackDecision({
+		frameKey,
+		decision,
+	}: {
+		frameKey: number;
+		decision: boolean;
+	}): void {
+		this.previewFallbackFrameDecisions.set(frameKey, decision);
+		if (this.previewFallbackFrameDecisions.size <= 24) {
+			return;
+		}
+		const oldestFrameKey = this.previewFallbackFrameDecisions.keys().next().value;
+		if (typeof oldestFrameKey === "number") {
+			this.previewFallbackFrameDecisions.delete(oldestFrameKey);
+		}
+	}
+
+	private hasPreviewNativeFallbackEffects({
+		renderer,
+		time,
+	}: {
+		renderer: CanvasRenderer;
+		time: number;
+	}): boolean {
+		if (this.previewFallbackStaticDecision !== null) {
+			return this.previewFallbackStaticDecision;
+		}
+
+		const enabledZoomEffects =
+			this.params.effects?.filter(
+				(effect) => effect.enabled && effect.type === "zoom",
+			) ?? [];
+		if (enabledZoomEffects.length === 0) {
+			this.previewFallbackStaticDecision = false;
 			return false;
 		}
 
 		const animationLocalTime = this.getAnimationLocalTime({ time });
+		const frameKey = this.getPreviewFallbackFrameKey({
+			animationLocalTime,
+			fps: renderer.fps,
+		});
+		const cachedDecision = this.previewFallbackFrameDecisions.get(frameKey);
+		if (cachedDecision !== undefined) {
+			return cachedDecision;
+		}
+
 		const progress =
 			this.params.duration <= 0
 				? 1
 				: Math.min(animationLocalTime / this.params.duration, 1);
+		let shouldFallback = false;
 
-		for (const effect of enabledEffects) {
-			if (effect.type !== "zoom") {
-				continue;
-			}
-
+		for (const effect of enabledZoomEffects) {
 			const resolvedParams = resolveEffectParamsAtTime({
 				effect,
 				animations: this.params.animations,
@@ -41,7 +92,8 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 			});
 
 			if (renderState.keepFrameFixed) {
-				return true;
+				shouldFallback = true;
+				break;
 			}
 
 			if (
@@ -50,11 +102,21 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 				Math.abs(renderState.rotationX) > 0.0001 ||
 				renderState.perspective > 0.0001
 			) {
-				return true;
+				shouldFallback = true;
+				break;
 			}
 		}
 
-		return false;
+		if (Object.keys(this.params.animations?.channels ?? {}).length === 0) {
+			this.previewFallbackStaticDecision = shouldFallback;
+			return shouldFallback;
+		}
+
+		this.cachePreviewFallbackDecision({
+			frameKey,
+			decision: shouldFallback,
+		});
+		return shouldFallback;
 	}
 
 	async render({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
@@ -67,7 +129,7 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 		const videoTime = this.getSourceLocalTime({ time });
 		if (
 			renderer.mode === "preview" &&
-			!this.hasPreviewNativeFallbackEffects({ time })
+			!this.hasPreviewNativeFallbackEffects({ renderer, time })
 		) {
 			const nativeSource = await nativeVideoPreview.getFrameSource({
 				mediaId: this.params.mediaId,
