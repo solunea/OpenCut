@@ -1043,7 +1043,6 @@ function TextAnimationOverlay({
 	const canShowLabels = entryPercent >= 8 || exitPercent >= 8;
 	const shouldShowInLabel = entryPercent >= 10;
 	const shouldShowOutLabel = exitPercent >= 10;
-	const startsAtTimelineOrigin = displayedStartTime <= 0.001;
 
 	return (
 		<div
@@ -1094,7 +1093,7 @@ function TextAnimationOverlay({
 			<div
 				role="presentation"
 				className="pointer-events-auto absolute top-1/2 h-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize"
-				style={{ left: `${startsAtTimelineOrigin ? 0 : entryPercent}%`, width: `${ZOOM_EASE_HANDLE_HIT_WIDTH_PX}px` }}
+				style={{ left: `${entryPercent}%`, width: `${ZOOM_EASE_HANDLE_HIT_WIDTH_PX}px` }}
 				onMouseDown={(event) => {
 					event.stopPropagation();
 					event.preventDefault();
