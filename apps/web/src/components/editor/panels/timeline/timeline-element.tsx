@@ -1,6 +1,7 @@
 "use client";
 
 import { useEditor } from "@/hooks/use-editor";
+import { normalizeTextAnimation } from "@/lib/text/animation";
 import { useAssetsPanelStore } from "@/stores/assets-panel-store";
 import AudioWaveform from "./audio-waveform";
 import { useTimelineElementResize } from "@/hooks/timeline/element/use-element-resize";
@@ -87,6 +88,183 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 type ZoomTimelineElement = VisualElement | EffectElement;
+type TextTimelineElement = Extract<TimelineElementType, { type: "text" }>;
+
+function splitTextLineIntoSegments({
+	line,
+	granularity,
+}: {
+	line: string;
+	granularity: "whole" | "word" | "character";
+}): string[] {
+	if (granularity === "whole") {
+		return [line];
+	}
+
+	if (granularity === "word") {
+		const segments = line.match(/\S+|\s+/g);
+		return segments && segments.length > 0 ? segments : [line];
+	}
+
+	return Array.from(line);
+}
+
+function getAnimatedTextSegmentCount({
+	content,
+	granularity,
+}: {
+	content: string;
+	granularity: "whole" | "word" | "character";
+}): number {
+	const lines = content.split(/\r?\n/);
+
+	if (granularity === "whole") {
+		return lines.length > 0 ? 1 : 0;
+	}
+
+	let count = 0;
+	for (const line of lines) {
+		for (const segment of splitTextLineIntoSegments({ line, granularity })) {
+			if (/\S/.test(segment)) {
+				count += 1;
+			}
+		}
+	}
+
+	return count;
+}
+
+function resolveTextAnimationBoundsForConfig({
+	content,
+	textAnimation,
+	displayedDuration,
+}: {
+	content: string;
+	textAnimation: TextTimelineElement["textAnimation"];
+	displayedDuration: number;
+}): {
+	entrySeconds: number;
+	exitSeconds: number;
+	minimumVisibleDuration: number;
+	requestedEntrySeconds: number;
+	requestedExitSeconds: number;
+	effectiveMaxSegmentDelay: number;
+	renderedEntrySpanSeconds: number;
+	renderedExitSpanSeconds: number;
+} | null {
+	if (displayedDuration <= 0) {
+		return null;
+	}
+
+	const normalizedTextAnimation = normalizeTextAnimation({ textAnimation });
+	if (normalizedTextAnimation.preset === "none") {
+		return null;
+	}
+	const animatedSegmentCount = getAnimatedTextSegmentCount({
+		content,
+		granularity: normalizedTextAnimation.granularity,
+	});
+	const segmentCountMinusOne = Math.max(0, animatedSegmentCount - 1);
+
+	const requestedDurationIn = clamp(
+		normalizedTextAnimation.durationIn,
+		0,
+		displayedDuration,
+	);
+	const requestedDurationOut = clamp(
+		normalizedTextAnimation.durationOut,
+		0,
+		displayedDuration,
+	);
+	const minimumVisibleDuration =
+		requestedDurationIn > 0 && requestedDurationOut > 0
+			? Math.min(0.12, displayedDuration * 0.2)
+			: 0;
+	const maxSegmentDelayBudget = Math.max(
+		0,
+		displayedDuration -
+			requestedDurationIn -
+			requestedDurationOut -
+			minimumVisibleDuration,
+	);
+	const requestedMaxSegmentDelay =
+		segmentCountMinusOne * normalizedTextAnimation.stagger;
+	const effectiveMaxSegmentDelay = clamp(
+		Math.min(requestedMaxSegmentDelay, maxSegmentDelayBudget),
+		0,
+		displayedDuration,
+	);
+	const entrySeconds = requestedDurationIn;
+	const exitSeconds = requestedDurationOut;
+
+	if (entrySeconds <= 0 && exitSeconds <= 0) {
+		return null;
+	}
+
+	return {
+		entrySeconds,
+		exitSeconds,
+		minimumVisibleDuration,
+		requestedEntrySeconds: requestedDurationIn,
+		requestedExitSeconds: requestedDurationOut,
+		effectiveMaxSegmentDelay,
+		renderedEntrySpanSeconds: clamp(
+			entrySeconds > 0 ? entrySeconds + effectiveMaxSegmentDelay : 0,
+			0,
+			displayedDuration,
+		),
+		renderedExitSpanSeconds: clamp(
+			exitSeconds > 0 ? exitSeconds + effectiveMaxSegmentDelay : 0,
+			0,
+			displayedDuration,
+		),
+	};
+}
+
+function solveTextAnimationDurationForRenderedSpan({
+	content,
+	textAnimation,
+	displayedDuration,
+	side,
+	targetSpanSeconds,
+}: {
+	content: string;
+	textAnimation: TextTimelineElement["textAnimation"];
+	displayedDuration: number;
+	side: "left" | "right";
+	targetSpanSeconds: number;
+}): number {
+	const normalizedTextAnimation = normalizeTextAnimation({ textAnimation });
+	let low = 0;
+	let high = displayedDuration;
+
+	for (let index = 0; index < 24; index += 1) {
+		const middle = (low + high) / 2;
+		const nextBounds = resolveTextAnimationBoundsForConfig({
+			content,
+			textAnimation: {
+				...normalizedTextAnimation,
+				durationIn:
+					side === "left" ? middle : normalizedTextAnimation.durationIn,
+				durationOut:
+					side === "right" ? middle : normalizedTextAnimation.durationOut,
+			},
+			displayedDuration,
+		});
+		const renderedSpan =
+			side === "left"
+				? (nextBounds?.renderedEntrySpanSeconds ?? 0)
+				: (nextBounds?.renderedExitSpanSeconds ?? 0);
+
+		if (renderedSpan < targetSpanSeconds) {
+			low = middle;
+		} else {
+			high = middle;
+		}
+	}
+
+	return Math.round(high * 100) / 100;
+}
 
 function resolveZoomTimelineEffect({
 	element,
@@ -204,6 +382,29 @@ function resolveZoomEaseBounds({
 		exitSeconds: exitSeconds * scale,
 		shared: false,
 	};
+}
+
+function resolveTextAnimationBounds({
+	element,
+	displayedDuration,
+}: {
+	element: TextTimelineElement;
+	displayedDuration: number;
+}): {
+	entrySeconds: number;
+	exitSeconds: number;
+	minimumVisibleDuration: number;
+	requestedEntrySeconds: number;
+	requestedExitSeconds: number;
+	effectiveMaxSegmentDelay: number;
+	renderedEntrySpanSeconds: number;
+	renderedExitSpanSeconds: number;
+} | null {
+	return resolveTextAnimationBoundsForConfig({
+		content: element.content,
+		textAnimation: element.textAnimation,
+		displayedDuration,
+	});
 }
 
 interface KeyframeIndicator {
@@ -635,7 +836,16 @@ function ElementInner({
 							displayedFreezeFrameStart={displayedFreezeFrameStart}
 							displayedFreezeFrameEnd={displayedFreezeFrameEnd}
 						/>
-						{element.type !== "audio" && (
+						{element.type === "text" && (
+							<TextAnimationOverlay
+								element={element as TextTimelineElement}
+								trackId={track.id}
+								isSelected={isSelected}
+								displayedStartTime={displayedStartTime}
+								displayedDuration={displayedDuration}
+							/>
+						)}
+						{element.type !== "audio" && element.type !== "text" && (
 							<ZoomEaseOverlay
 								element={element as ZoomTimelineElement}
 								trackId={track.id}
@@ -706,6 +916,208 @@ function ResizeHandle({
 			onClick={(event) => event.stopPropagation()}
 			aria-label={`${isLeft ? "Left" : "Right"} resize handle`}
 		></button>
+	);
+}
+
+function TextAnimationOverlay({
+	element,
+	trackId,
+	isSelected,
+	displayedStartTime,
+	displayedDuration,
+}: {
+	element: TextTimelineElement;
+	trackId: string;
+	isSelected: boolean;
+	displayedStartTime: number;
+	displayedDuration: number;
+}) {
+	const editor = useEditor();
+	const containerRef = useRef<HTMLDivElement | null>(null);
+	const [dragSide, setDragSide] = useState<"left" | "right" | null>(null);
+	const bounds = useMemo(
+		() => resolveTextAnimationBounds({ element, displayedDuration }),
+		[element, displayedDuration],
+	);
+
+	useEffect(() => {
+		if (!dragSide || !bounds) {
+			return;
+		}
+
+		const handleMouseMove = (event: MouseEvent) => {
+			const container = containerRef.current;
+			if (!container || displayedDuration <= 0) {
+				return;
+			}
+			const rect = container.getBoundingClientRect();
+			if (rect.width <= 0) {
+				return;
+			}
+
+			const relativeX = clamp(event.clientX - rect.left, 0, rect.width);
+			const timeAtCursor = (relativeX / rect.width) * displayedDuration;
+			const textAnimation = normalizeTextAnimation({
+				textAnimation: element.textAnimation,
+			});
+
+			if (dragSide === "left") {
+				const nextDurationIn = solveTextAnimationDurationForRenderedSpan({
+					content: element.content,
+					textAnimation,
+					displayedDuration,
+					side: "left",
+					targetSpanSeconds: clamp(timeAtCursor, 0, displayedDuration),
+				});
+
+				editor.timeline.previewElements({
+					updates: [
+						{
+							trackId,
+							elementId: element.id,
+							updates: {
+								textAnimation: {
+									...textAnimation,
+									durationIn: nextDurationIn,
+								},
+							},
+						},
+					],
+				});
+				return;
+			}
+
+			const nextDurationOut = solveTextAnimationDurationForRenderedSpan({
+				content: element.content,
+				textAnimation,
+				displayedDuration,
+				side: "right",
+				targetSpanSeconds: clamp(displayedDuration - timeAtCursor, 0, displayedDuration),
+			});
+
+			editor.timeline.previewElements({
+				updates: [
+					{
+						trackId,
+						elementId: element.id,
+						updates: {
+							textAnimation: {
+								...textAnimation,
+								durationOut: nextDurationOut,
+							},
+						},
+					},
+				],
+			});
+		};
+
+		const handleMouseUp = () => {
+			editor.timeline.commitPreview();
+			setDragSide(null);
+		};
+
+		document.addEventListener("mousemove", handleMouseMove);
+		document.addEventListener("mouseup", handleMouseUp);
+
+		return () => {
+			document.removeEventListener("mousemove", handleMouseMove);
+			document.removeEventListener("mouseup", handleMouseUp);
+		};
+	}, [bounds, displayedDuration, dragSide, editor.timeline, element.id, element.textAnimation, trackId]);
+
+	if (!bounds || displayedDuration <= 0 || !isSelected) {
+		return null;
+	}
+
+	const entryPercent = clamp(
+		(bounds.renderedEntrySpanSeconds / displayedDuration) * 100,
+		0,
+		100,
+	);
+	const exitPercent = clamp(
+		(bounds.renderedExitSpanSeconds / displayedDuration) * 100,
+		0,
+		100,
+	);
+	const rightStartPercent = clamp(100 - exitPercent, 0, 100);
+	const canShowLabels = entryPercent >= 8 || exitPercent >= 8;
+	const shouldShowInLabel = entryPercent >= 10;
+	const shouldShowOutLabel = exitPercent >= 10;
+	const startsAtTimelineOrigin = displayedStartTime <= 0.001;
+
+	return (
+		<div
+			ref={containerRef}
+			className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-sm"
+		>
+			<div className="absolute left-1 right-1 top-1/2 h-4 -translate-y-1/2 rounded-md ring-1 ring-fuchsia-300/35 ring-inset" />
+			<div
+				className="absolute left-0 top-1/2 h-4 -translate-y-1/2 rounded-l-md bg-fuchsia-400/16"
+				style={{ width: `${entryPercent}%` }}
+			/>
+			<div
+				className="absolute top-1/2 h-4 -translate-y-1/2 rounded-r-md bg-fuchsia-400/16"
+				style={{ left: `${rightStartPercent}%`, width: `${exitPercent}%` }}
+			/>
+			<div className="absolute inset-x-2 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-black/18">
+				<div
+					className="absolute left-0 top-0 h-full rounded-full bg-fuchsia-300/95 shadow-[0_0_8px_rgba(232,121,249,0.25)]"
+					style={{ width: `${entryPercent}%` }}
+				/>
+				<div
+					className="absolute top-0 h-full rounded-full bg-fuchsia-300/95 shadow-[0_0_8px_rgba(232,121,249,0.25)]"
+					style={{ left: `${rightStartPercent}%`, width: `${exitPercent}%` }}
+				/>
+			</div>
+			<div
+				className="absolute top-1/2 h-5 w-px -translate-y-1/2 bg-fuchsia-100/90 shadow-[0_0_0_1px_rgba(0,0,0,0.18)]"
+				style={{ left: `${entryPercent}%` }}
+			/>
+			<div
+				className="absolute top-1/2 h-5 w-px -translate-y-1/2 bg-fuchsia-100/90 shadow-[0_0_0_1px_rgba(0,0,0,0.18)]"
+				style={{ left: `${rightStartPercent}%` }}
+			/>
+			{canShowLabels && (
+				<>
+					{shouldShowInLabel && (
+						<div className="absolute left-1.5 top-0.5 rounded-md border border-fuchsia-300/45 bg-black/55 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-fuchsia-100 backdrop-blur-sm">
+							In
+						</div>
+					)}
+					{shouldShowOutLabel && (
+						<div className="absolute right-1.5 top-0.5 rounded-md border border-fuchsia-300/45 bg-black/55 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-fuchsia-100 backdrop-blur-sm">
+							Out
+						</div>
+					)}
+				</>
+			)}
+			<div
+				role="presentation"
+				className="pointer-events-auto absolute top-1/2 h-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize"
+				style={{ left: `${startsAtTimelineOrigin ? 0 : entryPercent}%`, width: `${ZOOM_EASE_HANDLE_HIT_WIDTH_PX}px` }}
+				onMouseDown={(event) => {
+					event.stopPropagation();
+					event.preventDefault();
+					setDragSide("left");
+				}}
+				aria-label="Text animation in handle"
+			>
+				<span className="pointer-events-none absolute left-1/2 top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-fuchsia-100 bg-fuchsia-300 shadow-[0_0_0_2px_rgba(8,15,25,0.35)]" />
+			</div>
+			<div
+				role="presentation"
+				className="pointer-events-auto absolute top-1/2 h-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize"
+				style={{ left: `${rightStartPercent}%`, width: `${ZOOM_EASE_HANDLE_HIT_WIDTH_PX}px` }}
+				onMouseDown={(event) => {
+					event.stopPropagation();
+					event.preventDefault();
+					setDragSide("right");
+				}}
+				aria-label="Text animation out handle"
+			>
+				<span className="pointer-events-none absolute left-1/2 top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-fuchsia-100 bg-fuchsia-300 shadow-[0_0_0_2px_rgba(8,15,25,0.35)]" />
+			</div>
+		</div>
 	);
 }
 
