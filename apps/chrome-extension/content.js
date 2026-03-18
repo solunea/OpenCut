@@ -201,6 +201,43 @@
 		}
 	}
 
+	function syncTrackingStateToFrame(targetWindow) {
+		if (!targetWindow || !state.isTracking) {
+			return;
+		}
+
+		try {
+			targetWindow.postMessage(
+				{
+					namespace: FRAME_RELAY_NAMESPACE,
+					type: "start-tracking",
+					payload: {
+						shouldHideNativeCursor: state.shouldHideNativeCursor,
+					},
+				},
+				"*",
+			);
+		} catch {
+		}
+	}
+
+	function requestTrackingSync() {
+		if (isTopFrame()) {
+			return;
+		}
+
+		try {
+			window.parent.postMessage(
+				{
+					namespace: FRAME_RELAY_NAMESPACE,
+					type: "frame-ready",
+				},
+				"*",
+			);
+		} catch {
+		}
+	}
+
 	function recordEvent({
 		type,
 		x,
@@ -523,6 +560,15 @@
 		if (
 			message &&
 			message.namespace === FRAME_RELAY_NAMESPACE &&
+			message.type === "frame-ready"
+		) {
+			syncTrackingStateToFrame(event.source);
+			return;
+		}
+
+		if (
+			message &&
+			message.namespace === FRAME_RELAY_NAMESPACE &&
 			(message.type === "start-tracking" || message.type === "stop-tracking")
 		) {
 			if (message.type === "start-tracking") {
@@ -623,6 +669,8 @@
 				});
 			});
 	});
+
+	requestTrackingSync();
 
 	chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		if (!message || message.namespace !== MESSAGE_NAMESPACE) {
