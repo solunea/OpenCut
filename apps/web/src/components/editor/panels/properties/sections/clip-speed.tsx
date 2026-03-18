@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NumberField } from "@/components/ui/number-field";
 import { useEditor } from "@/hooks/use-editor";
 import type { AudioElement, VideoElement } from "@/types/timeline";
@@ -42,13 +42,10 @@ export function ClipSpeedSection({
 	const [draftValue, setDraftValue] = useState(formatPlaybackRate({ playbackRate }));
 	const [isEditing, setIsEditing] = useState(false);
 
-	useEffect(() => {
-		if (!isEditing) {
-			setDraftValue(formatPlaybackRate({ playbackRate }));
-		}
-	}, [isEditing, playbackRate]);
-
 	const isDefault = playbackRate === DEFAULT_PLAYBACK_RATE;
+	const displayedValue = isEditing
+		? draftValue
+		: formatPlaybackRate({ playbackRate });
 
 	const commitPlaybackRate = ({ value }: { value: number }) => {
 		const nextPlaybackRate = normalizePlaybackRate({ playbackRate: value });
@@ -69,10 +66,13 @@ export function ClipSpeedSection({
 				<SectionField label="Playback rate">
 					<NumberField
 						className="w-full"
-						value={draftValue}
+						value={displayedValue}
 						min={MIN_PLAYBACK_RATE}
 						max={MAX_PLAYBACK_RATE}
-						onFocus={() => setIsEditing(true)}
+						onFocus={() => {
+							setDraftValue(formatPlaybackRate({ playbackRate }));
+							setIsEditing(true);
+						}}
 						onChange={(event) => setDraftValue(event.currentTarget.value)}
 						onBlur={() => {
 							setIsEditing(false);
@@ -83,7 +83,9 @@ export function ClipSpeedSection({
 							}
 							if (parsed !== playbackRate) {
 								commitPlaybackRate({ value: parsed });
+								return;
 							}
+							setDraftValue(formatPlaybackRate({ playbackRate }));
 						}}
 						onReset={() => commitPlaybackRate({ value: DEFAULT_PLAYBACK_RATE })}
 						isDefault={isDefault}

@@ -4,6 +4,7 @@ import type {
 	ZoomEffectTransition,
 	ZoomTransitionState,
 } from "@/types/effects";
+import type { CursorTrackingData } from "@/types/cursor-tracking";
 import zoomFragmentShader from "./zoom.frag.glsl";
 
 function resolveNumber({
@@ -84,6 +85,7 @@ function easeOutBack(value: number): number {
 
 type ZoomMotionVariant = "soft" | "punchy";
 type ZoomTransitionBoundary = "start" | "end";
+export type ZoomFocusSource = "manual" | "media-tracking";
 
 type ZoomMotionProfile = {
 	entryStrength: (value: number) => number;
@@ -117,6 +119,143 @@ function resolveTiltEnabled({
 		return effectParams.tiltEnabled;
 	}
 	return resolveZoomMode({ effectParams }) === "tilt";
+}
+
+export function resolveZoomFocusSource({
+	effectParams,
+}: {
+	effectParams: EffectParamValues;
+}): ZoomFocusSource {
+	return effectParams.focusSource === "media-tracking"
+		? "media-tracking"
+		: "manual";
+}
+
+function resolveCursorTrackingFocusAtTime({
+	cursorTracking,
+	sourceTime,
+}: {
+	cursorTracking?: CursorTrackingData;
+	sourceTime: number;
+}): { focusX: number; focusY: number } | null {
+	if (
+		!cursorTracking ||
+		cursorTracking.status !== "ready" ||
+		cursorTracking.samples.length === 0
+	) {
+		return null;
+	}
+
+	const samples = cursorTracking.samples;
+	const clampedSourceTime = Math.max(sourceTime, 0);
+	const firstSample = samples[0];
+	const lastSample = samples[samples.length - 1];
+
+	if (clampedSourceTime <= firstSample.time) {
+		return {
+			focusX: clamp01(firstSample.x),
+			focusY: clamp01(1 - firstSample.y),
+		};
+	}
+
+	if (clampedSourceTime >= lastSample.time) {
+		return {
+			focusX: clamp01(lastSample.x),
+			focusY: clamp01(1 - lastSample.y),
+		};
+	}
+
+	for (let index = 1; index < samples.length; index += 1) {
+		const previousSample = samples[index - 1];
+		const nextSample = samples[index];
+		if (clampedSourceTime > nextSample.time) {
+			continue;
+		}
+
+		const timeRange = nextSample.time - previousSample.time;
+		if (timeRange <= 1e-6) {
+			return {
+				focusX: clamp01(nextSample.x),
+				focusY: clamp01(1 - nextSample.y),
+			};
+		}
+
+		const progress = clamp01((clampedSourceTime - previousSample.time) / timeRange);
+		return {
+			focusX: clamp01(
+				lerp({
+					leftValue: previousSample.x,
+					rightValue: nextSample.x,
+					progress,
+				}),
+			),
+			focusY: clamp01(
+				1 -
+					lerp({
+						leftValue: previousSample.y,
+						rightValue: nextSample.y,
+						progress,
+					}),
+			),
+		};
+	}
+
+	return {
+		focusX: clamp01(lastSample.x),
+		focusY: clamp01(1 - lastSample.y),
+	};
+}
+
+function resolveZoomFocusState({
+	effectParams,
+	cursorTracking,
+	sourceTime,
+}: {
+	effectParams: EffectParamValues;
+	cursorTracking?: CursorTrackingData;
+	sourceTime?: number;
+}): { focusX: number; focusY: number } {
+	const fallback = {
+		focusX: clamp01(resolveNumber({ value: effectParams.focusX, fallback: 50 }) / 100),
+		focusY: clamp01(resolveNumber({ value: effectParams.focusY, fallback: 50 }) / 100),
+	};
+
+	if (resolveZoomFocusSource({ effectParams }) !== "media-tracking") {
+		return fallback;
+	}
+
+	if (typeof sourceTime !== "number" || !Number.isFinite(sourceTime)) {
+		return fallback;
+	}
+
+	return (
+		resolveCursorTrackingFocusAtTime({
+			cursorTracking,
+			sourceTime,
+		}) ?? fallback
+	);
+}
+
+export function resolveZoomEffectParamsForRender({
+	effectParams,
+	cursorTracking,
+	sourceTime,
+}: {
+	effectParams: EffectParamValues;
+	cursorTracking?: CursorTrackingData;
+	sourceTime?: number;
+}): EffectParamValues {
+	const focusState = resolveZoomFocusState({
+		effectParams,
+		cursorTracking,
+		sourceTime,
+	});
+
+	return {
+		...effectParams,
+		focusX: focusState.focusX * 100,
+		focusY: focusState.focusY * 100,
+	};
 }
 
 function resolveZoomMotionProfile({
@@ -280,11 +419,12 @@ export function resolveZoomTransitionState({
 	void _boundary;
 	void _travelProgress;
 	const tiltEnabled = resolveTiltEnabled({ effectParams });
+	const focusState = resolveZoomFocusState({ effectParams });
 
 	return {
 		zoom: Math.max(resolveNumber({ value: effectParams.zoom, fallback: 1.35 }), 1),
-		focusX: clamp01(resolveNumber({ value: effectParams.focusX, fallback: 50 }) / 100),
-		focusY: clamp01(resolveNumber({ value: effectParams.focusY, fallback: 50 }) / 100),
+		focusX: focusState.focusX,
+		focusY: focusState.focusY,
 		keepFrameFixed,
 		tiltX: tiltEnabled ? resolveTiltX({ effectParams }) : 0,
 		tiltY: tiltEnabled ? resolveTiltY({ effectParams }) : 0,
@@ -298,18 +438,27 @@ export function resolveZoomRenderState({
 	progress,
 	duration,
 	zoomTransition,
+	cursorTracking,
+	sourceTime,
 }: {
 	effectParams: EffectParamValues;
 	progress: number;
 	duration?: number;
 	zoomTransition?: ZoomEffectTransition;
+	cursorTracking?: CursorTrackingData;
+	sourceTime?: number;
 }): ZoomTransitionState & { strength: number } {
 	const motionProfile = resolveZoomMotionProfile({
 		variant: resolveZoomMotionVariant({ effectParams }),
 	});
 	const clampedProgress = clamp01(progress);
-	const targetState = resolveZoomTransitionState({
+	const resolvedEffectParams = resolveZoomEffectParamsForRender({
 		effectParams,
+		cursorTracking,
+		sourceTime,
+	});
+	const targetState = resolveZoomTransitionState({
+		effectParams: resolvedEffectParams,
 		travelProgress: motionProfile.focusTransition(clampedProgress),
 	});
 	const previousState = zoomTransition?.previous;
@@ -412,6 +561,16 @@ export const zoomEffectDefinition: EffectDefinition = {
 			min: 1,
 			max: 4,
 			step: 0.01,
+		},
+		{
+			key: "focusSource",
+			label: "Focus Source",
+			type: "select",
+			default: "manual",
+			options: [
+				{ value: "manual", label: "Manual" },
+				{ value: "media-tracking", label: "Media Tracking" },
+			],
 		},
 		{
 			key: "focusX",

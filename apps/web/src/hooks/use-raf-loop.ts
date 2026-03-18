@@ -4,10 +4,7 @@ export function useRafLoop(callback: ({ time }: { time: number }) => void) {
 	const requestRef = useRef<number>(0);
 	const previousTimeRef = useRef<number | null>(null);
 	const callbackRef = useRef(callback);
-
-	useEffect(() => {
-		callbackRef.current = callback;
-	}, [callback]);
+	callbackRef.current = callback;
 
 	useEffect(() => {
 		const loop = ({ time }: { time: number }) => {

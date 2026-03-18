@@ -6,7 +6,10 @@ import {
 } from "../custom-cursor-effect";
 import { BaseNode } from "./base-node";
 import type { Effect } from "@/types/effects";
-import type { RecordedCursorData } from "@/types/cursor-tracking";
+import type {
+	CursorTrackingData,
+	RecordedCursorData,
+} from "@/types/cursor-tracking";
 import type { BlendMode } from "@/types/rendering";
 import type {
 	MediaKeyframeEasing,
@@ -19,7 +22,10 @@ import {
 	resolveOpacityAtTime,
 	resolveTransformAtTime,
 } from "@/lib/animation";
-import { resolveZoomRenderState } from "@/lib/effects/definitions/zoom";
+import {
+	resolveZoomEffectParamsForRender,
+	resolveZoomRenderState,
+} from "@/lib/effects/definitions/zoom";
 import {
 	getClampedVideoSourceTimeFromTimelineTime,
 	getSourceTimeFromTimelineTime,
@@ -93,11 +99,15 @@ function resolveZoomFrameStyleState({
 	animations,
 	localTime,
 	duration,
+	cursorTracking,
+	sourceTime,
 }: {
 	effects: Effect[];
 	animations?: ElementAnimations;
 	localTime: number;
 	duration: number;
+	cursorTracking?: CursorTrackingData;
+	sourceTime?: number;
 }):
 	| {
 			tiltX: number;
@@ -132,6 +142,8 @@ function resolveZoomFrameStyleState({
 			effectParams,
 			progress,
 			duration,
+			cursorTracking,
+			sourceTime,
 		});
 
 		if (
@@ -362,6 +374,7 @@ export interface VisualNodeParams {
 	frameStyle?: VideoFrameStyle;
 	effects?: Effect[];
 	recordedCursor?: RecordedCursorData;
+	cursorTracking?: CursorTrackingData;
 }
 
 export abstract class VisualNode<
@@ -471,6 +484,8 @@ export abstract class VisualNode<
 			animations: this.params.animations,
 			localTime: animationLocalTime,
 			duration: this.params.duration,
+			cursorTracking: this.params.cursorTracking,
+			sourceTime: sourceLocalTime,
 		});
 		const frameStyle = resolveTiltAwareFrameStyle({
 			frameStyle: baseFrameStyle,
@@ -527,12 +542,20 @@ export abstract class VisualNode<
 				animations: this.params.animations,
 				localTime: animationLocalTime,
 			});
+			const renderParams =
+				effect.type === "zoom"
+					? resolveZoomEffectParamsForRender({
+							effectParams: resolvedParams,
+							cursorTracking: this.params.cursorTracking,
+							sourceTime: sourceLocalTime,
+						})
+					: resolvedParams;
 			const progress =
 				this.params.duration <= 0
 					? 1
 					: Math.min(animationLocalTime / this.params.duration, 1);
 			const keepFrameFixed = resolveBoolean({
-				value: resolvedParams.keepFrameFixed,
+				value: renderParams.keepFrameFixed,
 				fallback: true,
 			});
 			const shouldSkipEffectForBackgroundBlur =
@@ -569,7 +592,7 @@ export abstract class VisualNode<
 					height: pixelHeight,
 					renderScale: renderer.renderScale,
 					sourceTime: sourceLocalTime,
-					effectParams: resolvedParams,
+					effectParams: renderParams,
 					recordedCursor: this.params.recordedCursor,
 					zoomEffects: appliedZoomEffects,
 				});
@@ -581,7 +604,7 @@ export abstract class VisualNode<
 				width: pixelWidth,
 				height: pixelHeight,
 				effectType: effect.type,
-				effectParams: resolvedParams,
+				effectParams: renderParams,
 				localTime: animationLocalTime,
 				duration: this.params.duration,
 				progress,
@@ -589,7 +612,7 @@ export abstract class VisualNode<
 
 			if (effect.type === "zoom") {
 				appliedZoomEffects.push({
-					effectParams: resolvedParams,
+					effectParams: renderParams,
 					progress,
 					duration: this.params.duration,
 				});

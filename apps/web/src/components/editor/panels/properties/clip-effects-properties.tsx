@@ -413,6 +413,11 @@ function ClipEffectSection({
 											getEffectParamKeyframeIdAtTime("focusX") !== null,
 										focusYIsKeyframedAtTime:
 											getEffectParamKeyframeIdAtTime("focusY") !== null,
+										focusSource:
+											resolvedValues.focusSource === "media-tracking"
+												? "media-tracking"
+												: "manual",
+										hasReadyCursorTracking,
 										onPreviewFocus: previewZoomFocus,
 										onCommitFocus: commitPreview,
 										onToggleFocusXKeyframe: () =>
@@ -448,7 +453,7 @@ function ClipEffectSection({
 									)
 								}
 							>
-								Apply cursor follow
+								Bake tracking to keyframes
 							</Button>
 						</div>
 					) : null}

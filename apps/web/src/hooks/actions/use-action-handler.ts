@@ -15,10 +15,7 @@ export function useActionHandler<A extends TAction>(
 ) {
 	const handlerRef = useRef<TActionFunc<A>>(handler);
 	const isBoundRef = useRef(false);
-
-	useEffect(() => {
-		handlerRef.current = handler;
-	}, [handler]);
+	handlerRef.current = handler;
 
 	const stableHandler = useCallback(
 		(...parameters: [TArgOfAction<A>, TInvocationTrigger?]) => {

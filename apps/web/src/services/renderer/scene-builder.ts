@@ -108,6 +108,53 @@ function resolveZoomTransition({
 	return { previous, next };
 }
 
+function collectTrackedVideoSources({
+	tracks,
+	mediaMap,
+	beforeTrackIndex,
+}: {
+	tracks: TimelineTrack[];
+	mediaMap: Map<string, MediaAsset>;
+	beforeTrackIndex: number;
+}) {
+	const trackedSources: Array<{
+		startTime: number;
+		duration: number;
+		trimStart: number;
+		playbackRate?: number;
+		freezeFrameStart?: number;
+		freezeFrameEnd?: number;
+		cursorTracking?: MediaAsset["cursorTracking"];
+	}> = [];
+
+	for (let trackIndex = beforeTrackIndex - 1; trackIndex >= 0; trackIndex -= 1) {
+		const track = tracks[trackIndex];
+		if (track.type !== "video") {
+			continue;
+		}
+
+		const elements = getVisibleSortedElements({ track });
+		for (const element of elements) {
+			if (element.type !== "video") {
+				continue;
+			}
+
+			const mediaAsset = mediaMap.get(element.mediaId);
+			trackedSources.push({
+				startTime: element.startTime,
+				duration: element.duration,
+				trimStart: element.trimStart,
+				playbackRate: element.playbackRate,
+				freezeFrameStart: element.freezeFrameStart,
+				freezeFrameEnd: element.freezeFrameEnd,
+				cursorTracking: mediaAsset?.cursorTracking,
+			});
+		}
+	}
+
+	return trackedSources;
+}
+
 function buildTrackNodes({
 	tracks,
 	mediaMap,
@@ -121,7 +168,8 @@ function buildTrackNodes({
 }): BaseNode[] {
 	const nodes: BaseNode[] = [];
 
-	for (const track of tracks) {
+	for (let trackIndex = 0; trackIndex < tracks.length; trackIndex += 1) {
+		const track = tracks[trackIndex];
 		const elements = getVisibleSortedElements({ track });
 
 		for (let index = 0; index < elements.length; index += 1) {
@@ -134,6 +182,11 @@ function buildTrackNodes({
 						timeOffset: element.startTime,
 						duration: element.duration,
 						zoomTransition: resolveZoomTransition({ elements, index }),
+						trackedVideoSources: collectTrackedVideoSources({
+							tracks,
+							mediaMap,
+							beforeTrackIndex: trackIndex,
+						}),
 					}),
 				);
 				continue;
@@ -155,6 +208,7 @@ function buildTrackNodes({
 							mediaId: mediaAsset.id,
 							url: mediaAsset.url,
 							file: mediaAsset.file,
+							cursorTracking: mediaAsset.cursorTracking,
 							recordedCursor: mediaAsset.recordedCursor,
 							duration: videoElement.duration,
 							timeOffset: videoElement.startTime,

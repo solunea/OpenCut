@@ -2,7 +2,6 @@
 
 import {
 	useCallback,
-	useEffect,
 	useMemo,
 	useRef,
 	type PointerEvent as ReactPointerEvent,
@@ -27,6 +26,8 @@ type ZoomFocusControls = {
 	canKeyframe: boolean;
 	focusXIsKeyframedAtTime: boolean;
 	focusYIsKeyframedAtTime: boolean;
+	focusSource: string;
+	hasReadyCursorTracking: boolean;
 	onPreviewFocus: (params: Record<string, number | string | boolean>) => void;
 	onCommitFocus: () => void;
 	onToggleFocusXKeyframe: () => void;
@@ -68,6 +69,10 @@ export function EffectFields({
 	const fields = useMemo(() => {
 		const items: ReactNode[] = [];
 		let hasInsertedZoomFocusField = false;
+		const zoomFocusSource =
+			effectType === ZOOM_EFFECT_TYPE && values.focusSource === "media-tracking"
+				? "media-tracking"
+				: "manual";
 
 		for (const param of definition.params) {
 			if (effectType === ZOOM_EFFECT_TYPE && (param.key === "focusX" || param.key === "focusY")) {
@@ -77,6 +82,7 @@ export function EffectFields({
 							key="zoom-focus"
 							focusX={resolveNumericValue({ value: values.focusX, fallback: 50 })}
 							focusY={resolveNumericValue({ value: values.focusY, fallback: 50 })}
+							focusSource={zoomFocusSource}
 							onPreviewFocus={zoomFocusControls?.onPreviewFocus ?? onPreviewParams}
 							onCommit={zoomFocusControls?.onCommitFocus ?? onCommit}
 							zoomFocusControls={zoomFocusControls}
@@ -239,27 +245,35 @@ function TiltAxesField({
 function ZoomFocusField({
 	focusX,
 	focusY,
+	focusSource,
 	onPreviewFocus,
 	onCommit,
 	zoomFocusControls,
 }: {
 	focusX: number;
 	focusY: number;
+	focusSource: string;
 	onPreviewFocus: (params: Record<string, number | string | boolean>) => void;
 	onCommit: () => void;
 	zoomFocusControls?: ZoomFocusControls;
 }) {
 	const boxRef = useRef<HTMLDivElement>(null);
+	const activePointerIdRef = useRef<number | null>(null);
 	const isDraggingRef = useRef(false);
+	const usesMediaTracking = focusSource === "media-tracking";
+	const hasReadyCursorTracking = zoomFocusControls?.hasReadyCursorTracking ?? false;
 
 	const previewFocus = useCallback(
 		({ x, y }: { x: number; y: number }) => {
+			if (usesMediaTracking) {
+				return;
+			}
 			onPreviewFocus({
 				focusX: Math.round(clamp({ value: x, min: 0, max: 100 })),
 				focusY: Math.round(clamp({ value: 100 - y, min: 0, max: 100 })),
 			});
 		},
-		[onPreviewFocus],
+		[onPreviewFocus, usesMediaTracking],
 	);
 
 	const updateFromClientPosition = useCallback(
@@ -278,30 +292,70 @@ function ZoomFocusField({
 		[previewFocus],
 	);
 
-	useEffect(() => {
-		const handlePointerMove = (event: PointerEvent) => {
-			if (!isDraggingRef.current) {
+	const stopDragging = useCallback(() => {
+		if (!isDraggingRef.current) {
+			return;
+		}
+		isDraggingRef.current = false;
+		activePointerIdRef.current = null;
+		onCommit();
+	}, [onCommit]);
+
+	const handlePointerDown = useCallback(
+		(event: ReactPointerEvent<HTMLDivElement>) => {
+			event.preventDefault();
+			isDraggingRef.current = true;
+			activePointerIdRef.current = event.pointerId;
+			event.currentTarget.setPointerCapture(event.pointerId);
+			updateFromClientPosition({
+				clientX: event.clientX,
+				clientY: event.clientY,
+			});
+		},
+		[updateFromClientPosition],
+	);
+
+	const handlePointerMove = useCallback(
+		(event: ReactPointerEvent<HTMLDivElement>) => {
+			if (
+				!isDraggingRef.current ||
+				activePointerIdRef.current !== event.pointerId
+			) {
 				return;
 			}
-			updateFromClientPosition({ clientX: event.clientX, clientY: event.clientY });
-		};
+			updateFromClientPosition({
+				clientX: event.clientX,
+				clientY: event.clientY,
+			});
+		},
+		[updateFromClientPosition],
+	);
 
-		const handlePointerUp = () => {
-			if (!isDraggingRef.current) {
+	const handlePointerUp = useCallback(
+		(event: ReactPointerEvent<HTMLDivElement>) => {
+			if (activePointerIdRef.current !== event.pointerId) {
 				return;
 			}
-			isDraggingRef.current = false;
-			onCommit();
-		};
+			if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+				event.currentTarget.releasePointerCapture(event.pointerId);
+			}
+			stopDragging();
+		},
+		[stopDragging],
+	);
 
-		window.addEventListener("pointermove", handlePointerMove);
-		window.addEventListener("pointerup", handlePointerUp);
-
-		return () => {
-			window.removeEventListener("pointermove", handlePointerMove);
-			window.removeEventListener("pointerup", handlePointerUp);
-		};
-	}, [onCommit, updateFromClientPosition]);
+	const handleLostPointerCapture = useCallback(
+		(event: ReactPointerEvent<HTMLDivElement>) => {
+			if (
+				activePointerIdRef.current !== null &&
+				activePointerIdRef.current !== event.pointerId
+			) {
+				return;
+			}
+			stopDragging();
+		},
+		[stopDragging],
+	);
 
 	const focusXDraft = usePropertyDraft({
 		displayValue: String(Math.round(focusX)),
@@ -332,44 +386,53 @@ function ZoomFocusField({
 	return (
 		<SectionField label="Focus">
 			<div className="flex flex-col gap-3">
-				<div
-					ref={boxRef}
-					className="relative aspect-video w-full cursor-crosshair overflow-hidden rounded-md border bg-muted/30 select-none touch-none"
-					onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
-						event.preventDefault();
-						isDraggingRef.current = true;
-						event.currentTarget.setPointerCapture(event.pointerId);
-						updateFromClientPosition({
-							clientX: event.clientX,
-							clientY: event.clientY,
-						});
-					}}
-				>
-					<div className="absolute inset-0 grid grid-cols-3 grid-rows-3">
-						{Array.from({ length: 9 }).map((_, index) => (
-							<div
-								key={index}
-								className={cn(
-									"border-border/50",
-									index % 3 !== 2 && "border-r",
-									index < 6 && "border-b",
-								)}
-							/>
-						))}
+				{usesMediaTracking ? (
+					<div className="rounded-md border bg-muted/20 px-3 py-3 text-sm">
+						<div className="font-medium">Media tracking focus</div>
+						<div className="text-muted-foreground mt-1 text-xs">
+							{hasReadyCursorTracking
+								? "The zoom focus follows the tracked mouse position from this media."
+								: "No ready media tracking data was found. Manual focus values stay as fallback until tracking is available."}
+						</div>
 					</div>
+				) : (
 					<div
-						className="absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-sm"
-						style={{
-							left: `${focusX}%`,
-							top: `${100 - focusY}%`,
-						}}
-					/>
-				</div>
+						ref={boxRef}
+						className="relative aspect-video w-full cursor-crosshair overflow-hidden rounded-md border bg-muted/30 select-none touch-none"
+						onPointerDown={handlePointerDown}
+						onPointerMove={handlePointerMove}
+						onPointerUp={handlePointerUp}
+						onPointerCancel={handlePointerUp}
+						onLostPointerCapture={handleLostPointerCapture}
+					>
+						<div className="absolute inset-0 grid grid-cols-3 grid-rows-3">
+							{Array.from({ length: 9 }).map((_, index) => (
+								<div
+									key={index}
+									className={cn(
+										"border-border/50",
+										index % 3 !== 2 && "border-r",
+										index < 6 && "border-b",
+									)}
+								/>
+							))}
+						</div>
+						<div
+							className="absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-sm"
+							style={{
+								left: `${focusX}%`,
+								top: `${100 - focusY}%`,
+							}}
+						/>
+					</div>
+				)}
 				<div className="flex items-center justify-between gap-2">
 					<div className="text-muted-foreground text-xs">
-						Drag in the focus window to move the zoom target.
+						{usesMediaTracking
+							? "Switch Focus Source back to Manual to edit the zoom target yourself."
+							: "Drag in the focus window to move the zoom target."}
 					</div>
-					{zoomFocusControls && (
+					{zoomFocusControls && !usesMediaTracking && (
 						<Button
 							type="button"
 							size="sm"
@@ -383,7 +446,7 @@ function ZoomFocusField({
 				</div>
 				<div className="grid grid-cols-2 gap-2">
 					<div className="flex items-center gap-1">
-						{zoomFocusControls && (
+						{zoomFocusControls && !usesMediaTracking && (
 							<KeyframeToggle
 								isActive={zoomFocusControls.focusXIsKeyframedAtTime}
 								isDisabled={!zoomFocusControls.canKeyframe}
@@ -394,6 +457,7 @@ function ZoomFocusField({
 						<NumberField
 							icon="X"
 							className="flex-1"
+							disabled={usesMediaTracking}
 							value={focusXDraft.displayValue}
 							onFocus={focusXDraft.onFocus}
 							onChange={focusXDraft.onChange}
@@ -401,7 +465,7 @@ function ZoomFocusField({
 						/>
 					</div>
 					<div className="flex items-center gap-1">
-						{zoomFocusControls && (
+						{zoomFocusControls && !usesMediaTracking && (
 							<KeyframeToggle
 								isActive={zoomFocusControls.focusYIsKeyframedAtTime}
 								isDisabled={!zoomFocusControls.canKeyframe}
@@ -412,6 +476,7 @@ function ZoomFocusField({
 						<NumberField
 							icon="Y"
 							className="flex-1"
+							disabled={usesMediaTracking}
 							value={focusYDraft.displayValue}
 							onFocus={focusYDraft.onFocus}
 							onChange={focusYDraft.onChange}
