@@ -1,6 +1,8 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { nativeVideoPreview } from "../native-video-preview";
 import { VisualNode, type VisualNodeParams } from "./visual-node";
+import { resolveEffectParamsAtTime } from "@/lib/animation/effect-param-channel";
+import { resolveZoomRenderState } from "@/lib/effects/definitions/zoom";
 import { videoCache } from "@/services/video-cache/service";
 
 export interface VideoNodeParams extends VisualNodeParams {
@@ -10,6 +12,51 @@ export interface VideoNodeParams extends VisualNodeParams {
 }
 
 export class VideoNode extends VisualNode<VideoNodeParams> {
+	private hasPreviewNativeFallbackEffects({ time }: { time: number }): boolean {
+		const enabledEffects = this.params.effects?.filter((effect) => effect.enabled) ?? [];
+		if (enabledEffects.length === 0) {
+			return false;
+		}
+
+		const animationLocalTime = this.getAnimationLocalTime({ time });
+		const progress =
+			this.params.duration <= 0
+				? 1
+				: Math.min(animationLocalTime / this.params.duration, 1);
+
+		for (const effect of enabledEffects) {
+			if (effect.type !== "zoom") {
+				continue;
+			}
+
+			const resolvedParams = resolveEffectParamsAtTime({
+				effect,
+				animations: this.params.animations,
+				localTime: animationLocalTime,
+			});
+			const renderState = resolveZoomRenderState({
+				effectParams: resolvedParams,
+				progress,
+				duration: this.params.duration,
+			});
+
+			if (renderState.keepFrameFixed) {
+				return true;
+			}
+
+			if (
+				Math.abs(renderState.tiltX) > 0.0001 ||
+				Math.abs(renderState.tiltY) > 0.0001 ||
+				Math.abs(renderState.rotationX) > 0.0001 ||
+				renderState.perspective > 0.0001
+			) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	async render({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
 		await super.render({ renderer, time });
 
@@ -18,7 +65,10 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 		}
 
 		const videoTime = this.getSourceLocalTime({ time });
-		if (renderer.mode === "preview") {
+		if (
+			renderer.mode === "preview" &&
+			!this.hasPreviewNativeFallbackEffects({ time })
+		) {
 			const nativeSource = await nativeVideoPreview.getFrameSource({
 				mediaId: this.params.mediaId,
 				url: this.params.url,
