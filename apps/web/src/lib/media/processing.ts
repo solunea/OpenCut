@@ -13,6 +13,7 @@ export interface ProcessedMediaAsset extends Omit<MediaAsset, "id"> {}
 
 const THUMBNAIL_MAX_WIDTH = 1280;
 const THUMBNAIL_MAX_HEIGHT = 720;
+const MAX_TIMELINE_THUMBNAILS = 12;
 
 const getThumbnailSize = ({
 	width,
@@ -86,6 +87,46 @@ const getThumbnailTimeInSeconds = ({
 	);
 };
 
+const getTimelineThumbnailTimes = ({
+	duration,
+	trimStart = 0,
+	trimEnd = 0,
+	count,
+}: {
+	duration?: number;
+	trimStart?: number;
+	trimEnd?: number;
+	count: number;
+}): number[] => {
+	if (!Number.isFinite(duration) || !duration || duration <= 0 || count <= 0) {
+		return [];
+	}
+
+	const safeTrimStart = Math.max(0, trimStart);
+	const safeTrimEnd = Math.max(0, trimEnd);
+	const sourceStart = Math.min(duration, safeTrimStart);
+	const sourceEnd = Math.max(sourceStart, duration - safeTrimEnd);
+	const visibleDuration = Math.max(0, sourceEnd - sourceStart);
+	const thumbnailCount = Math.max(1, Math.min(count, MAX_TIMELINE_THUMBNAILS));
+
+	if (visibleDuration <= 0) {
+		return [
+			getThumbnailTimeInSeconds({
+				duration,
+				preferredTimeInSeconds: sourceStart,
+			}),
+		];
+	}
+
+	return Array.from({ length: thumbnailCount }, (_, index) => {
+		const progress = (index + 0.5) / thumbnailCount;
+		return getThumbnailTimeInSeconds({
+			duration,
+			preferredTimeInSeconds: sourceStart + visibleDuration * progress,
+		});
+	});
+};
+
 export async function generateThumbnail({
 	videoFile,
 	timeInSeconds,
@@ -127,6 +168,178 @@ export async function generateThumbnail({
 	} finally {
 		frame.close();
 	}
+}
+
+async function generateThumbnailsFromVideoElement({
+	videoFile,
+	timesInSeconds,
+}: {
+	videoFile: File;
+	timesInSeconds: number[];
+}): Promise<{
+	dataUrls: string[];
+	duration: number;
+	height: number;
+	width: number;
+}> {
+	return await new Promise((resolve, reject) => {
+		const video = document.createElement("video");
+		const objectUrl = URL.createObjectURL(videoFile);
+		let settled = false;
+
+		const cleanup = () => {
+			URL.revokeObjectURL(objectUrl);
+			video.pause();
+			video.removeAttribute("src");
+			video.load();
+			video.remove();
+		};
+
+		const settle = (callback: () => void) => {
+			if (settled) {
+				return;
+			}
+
+			settled = true;
+			callback();
+			cleanup();
+		};
+
+		const seekTo = (targetTimeInSeconds: number) =>
+			new Promise<void>((resolveSeek, rejectSeek) => {
+				const safeTargetTime = getThumbnailTimeInSeconds({
+					duration: video.duration,
+					preferredTimeInSeconds: targetTimeInSeconds,
+				});
+
+				if (Math.abs(video.currentTime - safeTargetTime) <= 0.001) {
+					resolveSeek();
+					return;
+				}
+
+				const complete = () => {
+					video.removeEventListener("seeked", handleSeeked);
+					video.removeEventListener("error", handleError);
+				};
+
+				const handleSeeked = () => {
+					complete();
+					resolveSeek();
+				};
+
+				const handleError = () => {
+					complete();
+					rejectSeek(new Error("Could not seek video for timeline thumbnail"));
+				};
+
+				video.addEventListener("seeked", handleSeeked, { once: true });
+				video.addEventListener("error", handleError, { once: true });
+
+				try {
+					video.currentTime = safeTargetTime;
+				} catch (error) {
+					complete();
+					rejectSeek(
+						error instanceof Error
+							? error
+							: new Error("Could not seek video for timeline thumbnail"),
+					);
+				}
+			});
+
+		const captureAtCurrentTime = () => {
+			if (!video.videoWidth || !video.videoHeight) {
+				throw new Error("Could not read video frame size");
+			}
+
+			return renderToThumbnailDataUrl({
+				width: video.videoWidth,
+				height: video.videoHeight,
+				draw: ({ context, width, height }) => {
+					context.drawImage(video, 0, 0, width, height);
+				},
+			});
+		};
+
+		video.addEventListener(
+			"loadedmetadata",
+			() => {
+				void (async () => {
+					try {
+						const dataUrls: string[] = [];
+						for (const timeInSeconds of timesInSeconds) {
+							await seekTo(timeInSeconds);
+							dataUrls.push(captureAtCurrentTime());
+						}
+
+						settle(() =>
+							resolve({
+								dataUrls,
+								duration: Number.isFinite(video.duration) ? video.duration : 0,
+								height: video.videoHeight,
+								width: video.videoWidth,
+							}),
+						);
+					} catch (error) {
+						settle(() =>
+							reject(
+								error instanceof Error
+									? error
+									: new Error("Could not render timeline thumbnails"),
+							),
+						);
+					}
+				})();
+			},
+			{ once: true },
+		);
+
+		video.addEventListener(
+			"error",
+			() => {
+				settle(() => reject(new Error("Could not load video")));
+			},
+			{ once: true },
+		);
+
+		video.muted = true;
+		video.playsInline = true;
+		video.preload = "metadata";
+		video.src = objectUrl;
+		video.load();
+	});
+}
+
+export async function generateTimelineVideoThumbnails({
+	videoFile,
+	duration,
+	trimStart = 0,
+	trimEnd = 0,
+	thumbnailCount,
+}: {
+	videoFile: File;
+	duration?: number;
+	trimStart?: number;
+	trimEnd?: number;
+	thumbnailCount: number;
+}): Promise<string[]> {
+	const timesInSeconds = getTimelineThumbnailTimes({
+		duration,
+		trimStart,
+		trimEnd,
+		count: thumbnailCount,
+	});
+
+	if (timesInSeconds.length === 0) {
+		return [];
+	}
+
+	const result = await generateThumbnailsFromVideoElement({
+		videoFile,
+		timesInSeconds,
+	});
+
+	return result.dataUrls;
 }
 
 async function generateThumbnailFromVideoElement({
@@ -311,6 +524,7 @@ export async function processMediaAssets({
 
 		const url = URL.createObjectURL(file);
 		let thumbnailUrl: string | undefined;
+		let timelineThumbnailUrls: string[] | undefined;
 		let duration: number | undefined;
 		let width: number | undefined;
 		let height: number | undefined;
@@ -348,6 +562,18 @@ export async function processMediaAssets({
 						videoFile: file,
 						timeInSeconds: thumbnailTimeInSeconds,
 					});
+					try {
+						timelineThumbnailUrls = await generateTimelineVideoThumbnails({
+							videoFile: file,
+							duration,
+							thumbnailCount: MAX_TIMELINE_THUMBNAILS,
+						});
+					} catch (timelineThumbnailError) {
+						console.warn(
+							"Video timeline thumbnail generation failed",
+							timelineThumbnailError,
+						);
+					}
 				} catch (error) {
 					console.warn("Video thumbnail decoding failed", error);
 
@@ -360,6 +586,18 @@ export async function processMediaAssets({
 						duration = duration ?? browserThumbnail.duration;
 						width = width ?? browserThumbnail.width;
 						height = height ?? browserThumbnail.height;
+						try {
+							timelineThumbnailUrls = await generateTimelineVideoThumbnails({
+								videoFile: file,
+								duration,
+								thumbnailCount: MAX_TIMELINE_THUMBNAILS,
+							});
+						} catch (timelineThumbnailError) {
+							console.warn(
+								"Browser timeline thumbnail generation failed",
+								timelineThumbnailError,
+							);
+						}
 					} catch (fallbackError) {
 						console.warn("Browser video thumbnail generation failed", fallbackError);
 					}
@@ -382,6 +620,7 @@ export async function processMediaAssets({
 				file,
 				url,
 				thumbnailUrl,
+				timelineThumbnailUrls,
 				duration,
 				width,
 				height,

@@ -1,5 +1,6 @@
 import type { EditorCore } from "@/core";
 import { clearAllLottieAssets, clearLottieAsset } from "@/lib/media/lottie";
+import { generateTimelineVideoThumbnails } from "@/lib/media/processing";
 import { hasMediaId } from "@/lib/timeline/element-utils";
 import { nativeVideoPreview } from "@/services/renderer/native-video-preview";
 import { storageService } from "@/services/storage/service";
@@ -133,6 +134,7 @@ export class MediaManager {
 			});
 			this.assets = mediaAssets;
 			this.notify();
+			void this.regenerateMissingTimelineThumbnails({ projectId, mediaAssets });
 		} catch (error) {
 			console.error("Failed to load media assets:", error);
 		} finally {
@@ -204,6 +206,59 @@ export class MediaManager {
 	subscribe(listener: () => void): () => void {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
+	}
+
+	private async regenerateMissingTimelineThumbnails({
+		projectId,
+		mediaAssets,
+	}: {
+		projectId: string;
+		mediaAssets: MediaAsset[];
+	}): Promise<void> {
+		for (const asset of mediaAssets) {
+			if (
+				asset.type !== "video" ||
+				(asset.timelineThumbnailUrls && asset.timelineThumbnailUrls.length > 1)
+			) {
+				continue;
+			}
+
+			try {
+				const timelineThumbnailUrls = await generateTimelineVideoThumbnails({
+					videoFile: asset.file,
+					duration: asset.duration,
+					thumbnailCount: 12,
+				});
+
+				if (timelineThumbnailUrls.length <= 1) {
+					continue;
+				}
+
+				const assetIndex = this.assets.findIndex(
+					(existingAsset) => existingAsset.id === asset.id,
+				);
+
+				if (assetIndex < 0) {
+					continue;
+				}
+
+				const updatedAsset: MediaAsset = {
+					...this.assets[assetIndex],
+					timelineThumbnailUrls,
+				};
+				const nextAssets = [...this.assets];
+				nextAssets[assetIndex] = updatedAsset;
+				this.assets = nextAssets;
+				this.notify();
+
+				await storageService.saveMediaAsset({
+					projectId,
+					mediaAsset: updatedAsset,
+				});
+			} catch (error) {
+				console.warn("Failed to regenerate timeline thumbnails", error);
+			}
+		}
 	}
 
 	private notify(): void {

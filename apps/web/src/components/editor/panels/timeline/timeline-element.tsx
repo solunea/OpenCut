@@ -13,6 +13,7 @@ import { useKeyframeSelection } from "@/hooks/timeline/element/use-keyframe-sele
 import type { SnapPoint } from "@/lib/timeline/snap-utils";
 import { getElementKeyframes } from "@/lib/animation";
 import {
+	getClampedVideoSourceTimeFromTimelineTime,
 	getVisibleTimelineDuration,
 	normalizeFreezeFrameDuration,
 } from "@/lib/timeline/clip-speed";
@@ -85,6 +86,77 @@ const ZOOM_EASE_HANDLE_HIT_WIDTH_PX = 12;
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.min(Math.max(value, min), max);
+}
+
+function getThumbnailIndexForSourceTime({
+	sourceTime,
+	sourceDuration,
+	thumbnailCount,
+}: {
+	sourceTime: number;
+	sourceDuration?: number;
+	thumbnailCount: number;
+}): number {
+	if (
+		thumbnailCount <= 1 ||
+		typeof sourceDuration !== "number" ||
+		!Number.isFinite(sourceDuration) ||
+		sourceDuration <= 0
+	) {
+		return 0;
+	}
+
+	const safeEndOffset = Math.min(0.05, sourceDuration / 4);
+	const safeDuration = Math.max(0, sourceDuration - safeEndOffset);
+	const normalizedSourceTime = clamp(sourceTime, 0, safeDuration);
+	const estimatedIndex =
+		(normalizedSourceTime / Math.max(safeDuration, Number.EPSILON)) * thumbnailCount -
+		0.5;
+
+	return clamp(Math.round(estimatedIndex), 0, thumbnailCount - 1);
+}
+
+function getVideoTimelineThumbnailSequence({
+	element,
+	thumbnailUrls,
+	sourceDuration,
+	tileCount,
+	clipDuration,
+	freezeFrameStart,
+	freezeFrameEnd,
+}: {
+	element: Extract<TimelineElementType, { type: "video" }>;
+	thumbnailUrls: string[];
+	sourceDuration?: number;
+	tileCount: number;
+	clipDuration: number;
+	freezeFrameStart: number;
+	freezeFrameEnd: number;
+}): string[] {
+	if (thumbnailUrls.length === 0 || tileCount <= 0) {
+		return [];
+	}
+
+	return Array.from({ length: tileCount }, (_, index) => {
+		const progress = (index + 0.5) / tileCount;
+		const timelineLocalTime = progress * clipDuration;
+		const sourceTime = getClampedVideoSourceTimeFromTimelineTime({
+			timelineTime: timelineLocalTime,
+			startTime: 0,
+			trimStart: element.trimStart,
+			duration: clipDuration,
+			playbackRate: element.playbackRate,
+			freezeFrameStart,
+			freezeFrameEnd,
+		});
+		const thumbnailIndex = getThumbnailIndexForSourceTime({
+			sourceTime,
+			sourceDuration,
+			thumbnailCount: thumbnailUrls.length,
+		});
+
+		return thumbnailUrls[thumbnailIndex];
+	});
 }
 
 type ZoomTimelineElement = VisualElement | EffectElement;
@@ -669,6 +741,7 @@ export function TimelineElement({
 						isDropTarget={isDropTarget}
 						displayedStartTime={displayedStartTime}
 						displayedDuration={displayedDuration}
+						elementWidth={elementWidth}
 						displayedTrimStart={displayedTrimStart}
 						displayedTrimEnd={displayedTrimEnd}
 						displayedFreezeFrameStart={displayedFreezeFrameStart}
@@ -761,6 +834,7 @@ function ElementInner({
 	isDropTarget = false,
 	displayedStartTime,
 	displayedDuration,
+	elementWidth,
 	displayedTrimStart,
 	displayedTrimEnd,
 	displayedFreezeFrameStart,
@@ -785,6 +859,7 @@ function ElementInner({
 	isDropTarget?: boolean;
 	displayedStartTime: number;
 	displayedDuration: number;
+	elementWidth: number;
 	displayedTrimStart: number;
 	displayedTrimEnd: number;
 	displayedFreezeFrameStart: number;
@@ -831,6 +906,7 @@ function ElementInner({
 							track={track}
 							isSelected={isSelected}
 							displayedDuration={displayedDuration}
+							elementWidth={elementWidth}
 							displayedTrimStart={displayedTrimStart}
 							displayedTrimEnd={displayedTrimEnd}
 							displayedFreezeFrameStart={displayedFreezeFrameStart}
@@ -1466,6 +1542,7 @@ interface ElementContentProps {
 	track: TimelineTrack;
 	isSelected: boolean;
 	displayedDuration: number;
+	elementWidth: number;
 	displayedTrimStart: number;
 	displayedTrimEnd: number;
 	displayedFreezeFrameStart?: number;
@@ -1587,8 +1664,12 @@ function LottieLoopOverlay({
 export function renderTiledMedia({
 	element,
 	imageUrl,
+	imageUrls,
+	imageAspectRatio,
+	sourceDuration,
 	track,
 	clipDuration,
+	elementWidth,
 	displayedFreezeFrameStart,
 	displayedFreezeFrameEnd,
 	showTransparencyGrid = false,
@@ -1597,8 +1678,12 @@ export function renderTiledMedia({
 }: {
 	element: VisualElement;
 	imageUrl: string | undefined;
+	imageUrls?: string[];
+	imageAspectRatio?: number;
+	sourceDuration?: number;
 	track: ElementContentProps["track"];
 	clipDuration?: number;
+	elementWidth?: number;
 	displayedFreezeFrameStart?: number;
 	displayedFreezeFrameEnd?: number;
 	showTransparencyGrid?: boolean;
@@ -1607,7 +1692,12 @@ export function renderTiledMedia({
 }): ReactNode {
 	const resolvedClipDuration = clipDuration ?? element.duration;
 	const trackHeight = getTrackHeight({ type: track.type });
-	const tileWidth = trackHeight * (16 / 9);
+	const resolvedAspectRatio =
+		typeof imageAspectRatio === "number" && Number.isFinite(imageAspectRatio)
+			? imageAspectRatio
+			: 16 / 9;
+	const tileWidth = trackHeight * resolvedAspectRatio;
+	const resolvedImageUrls = imageUrls?.filter(Boolean) ?? [];
 	const freezeFrameStart =
 		element.type === "video"
 			? normalizeFreezeFrameDuration({
@@ -1631,8 +1721,37 @@ export function renderTiledMedia({
 			: 100;
 	const leftOffsetPercent =
 		resolvedClipDuration > 0 ? (freezeFrameStart / resolvedClipDuration) * 100 : 0;
-	const shouldShowGrid = showTransparencyGrid || !imageUrl;
-	const shouldShowTitle = showTitle || !imageUrl;
+	const visiblePixelWidth = Math.max(
+		0,
+		((elementWidth ?? 0) * visibleWidthPercent) / 100,
+	);
+	const hasAnyImage = resolvedImageUrls.length > 0 || Boolean(imageUrl);
+	const shouldRenderFilmstrip = resolvedImageUrls.length > 1;
+	const renderedThumbnailCount = shouldRenderFilmstrip
+		? Math.max(
+				resolvedImageUrls.length,
+				Math.ceil(visiblePixelWidth / Math.max(tileWidth, 1)) + 1,
+			)
+		: 0;
+	const renderedImageUrls =
+		shouldRenderFilmstrip &&
+			element.type === "video"
+			? getVideoTimelineThumbnailSequence({
+					element,
+					thumbnailUrls: resolvedImageUrls,
+					sourceDuration: sourceDuration,
+					tileCount: renderedThumbnailCount,
+					clipDuration: resolvedClipDuration,
+					freezeFrameStart,
+					freezeFrameEnd,
+				})
+			: shouldRenderFilmstrip
+				? Array.from({ length: renderedThumbnailCount }, (_, index) => {
+						return resolvedImageUrls[index % resolvedImageUrls.length];
+					})
+				: [];
+	const shouldShowGrid = showTransparencyGrid || !hasAnyImage;
+	const shouldShowTitle = showTitle || !hasAnyImage;
 
 	return (
 		<div className="relative size-full overflow-hidden">
@@ -1651,7 +1770,32 @@ export function renderTiledMedia({
 					}}
 				/>
 			)}
+			{shouldRenderFilmstrip && (
+				<div
+					className="absolute inset-y-0 flex overflow-hidden"
+					style={{
+						left: `${leftOffsetPercent}%`,
+						width: `${visibleWidthPercent}%`,
+						pointerEvents: "none",
+					}}
+				>
+					{renderedImageUrls.map((thumbnailUrl: string, index: number) => (
+						<div
+							key={`${element.id}-${index}`}
+							className="flex h-full shrink-0 items-center justify-center overflow-hidden"
+						>
+							<img
+								src={thumbnailUrl}
+								alt=""
+								className="pointer-events-none h-full w-auto max-w-none object-contain"
+								draggable={false}
+							/>
+						</div>
+					))}
+				</div>
+			)}
 			{imageUrl && (
+				!shouldRenderFilmstrip && (
 				<div
 					className="absolute inset-y-0"
 					style={{
@@ -1664,6 +1808,7 @@ export function renderTiledMedia({
 						pointerEvents: "none",
 					}}
 				/>
+				)
 			)}
 			{shouldShowTitle && (
 				<div className="absolute inset-0 flex items-center justify-center px-2 pointer-events-none">
@@ -1812,6 +1957,7 @@ const ELEMENT_CONTENT_RENDERERS: Record<
 		track,
 		mediaAssets,
 		displayedDuration,
+		elementWidth,
 		displayedFreezeFrameStart,
 		displayedFreezeFrameEnd,
 	}) => {
@@ -1825,8 +1971,15 @@ const ELEMENT_CONTENT_RENDERERS: Record<
 		return renderTiledMedia({
 			element: videoElement,
 			imageUrl: mediaAsset?.thumbnailUrl,
+			imageUrls: mediaAsset?.timelineThumbnailUrls,
+			imageAspectRatio:
+				mediaAsset?.width && mediaAsset?.height
+					? mediaAsset.width / mediaAsset.height
+					: undefined,
+			sourceDuration: mediaAsset?.duration ?? videoElement.sourceDuration,
 			track,
 			clipDuration: displayedDuration,
+			elementWidth,
 			displayedFreezeFrameStart,
 			displayedFreezeFrameEnd,
 		});
@@ -1884,6 +2037,7 @@ function ElementContent({
 	track,
 	isSelected,
 	displayedDuration,
+	elementWidth,
 	displayedTrimStart,
 	displayedTrimEnd,
 	displayedFreezeFrameStart,
@@ -1898,6 +2052,7 @@ function ElementContent({
 				track,
 				isSelected,
 				displayedDuration,
+				elementWidth,
 				displayedTrimStart,
 				displayedTrimEnd,
 				displayedFreezeFrameStart,

@@ -30,6 +30,7 @@ export interface MediaAssetData {
 	fps?: number;
 	ephemeral?: boolean;
 	thumbnailUrl?: string;
+	timelineThumbnailUrls?: string[];
 	cursorTracking?: CursorTrackingData;
 	recordedCursor?: RecordedCursorData;
 }
