@@ -28,6 +28,9 @@
 		lastMoveY: null,
 		shouldHideNativeCursor: false,
 		cursorAppearanceObserver: null,
+		inlineCursorFallbackElement: null,
+		inlineCursorFallbackValue: "",
+		inlineCursorFallbackPriority: "",
 	};
 
 	function clamp(value, min, max) {
@@ -69,16 +72,32 @@
 		return Math.max(0, (performance.now() - state.startedAtPerf) / 1000);
 	}
 
-	function getCaptureCursorCss({ includeDot }) {
+	function getCaptureCursorCss({ includeDot, inShadowRoot = false }) {
+		const cursorResetSelector = inShadowRoot
+			? `
+				:host,
+				:host *,
+				:host *::before,
+				:host *::after,
+				*,
+				*::before,
+				*::after
+			`
+			: `
+				:root,
+				:root *,
+				:root *::before,
+				:root *::after,
+				html,
+				html::before,
+				html::after,
+				body,
+				body::before,
+				body::after
+			`;
+
 		return `
-			html,
-			body,
-			html *,
-			body *,
-			html *::before,
-			html *::after,
-			body *::before,
-			body *::after {
+			${cursorResetSelector} {
 				cursor: none !important;
 			}
 
@@ -101,6 +120,54 @@
 		`;
 	}
 
+	function restoreInlineCursorFallback() {
+		const element = state.inlineCursorFallbackElement;
+		if (element instanceof Element && element.style) {
+			if (state.inlineCursorFallbackValue) {
+				element.style.setProperty(
+					"cursor",
+					state.inlineCursorFallbackValue,
+					state.inlineCursorFallbackPriority || undefined,
+				);
+			} else {
+				element.style.removeProperty("cursor");
+			}
+		}
+
+		state.inlineCursorFallbackElement = null;
+		state.inlineCursorFallbackValue = "";
+		state.inlineCursorFallbackPriority = "";
+	}
+
+	function syncInlineCursorFallback(target, cursor) {
+		if (!state.shouldHideNativeCursor) {
+			restoreInlineCursorFallback();
+			return;
+		}
+
+		const element = target instanceof Element ? target : null;
+		if (!element || !element.style) {
+			restoreInlineCursorFallback();
+			return;
+		}
+
+		if (cursor === "none") {
+			if (state.inlineCursorFallbackElement && state.inlineCursorFallbackElement !== element) {
+				restoreInlineCursorFallback();
+			}
+			return;
+		}
+
+		if (state.inlineCursorFallbackElement !== element) {
+			restoreInlineCursorFallback();
+			state.inlineCursorFallbackElement = element;
+			state.inlineCursorFallbackValue = element.style.getPropertyValue("cursor");
+			state.inlineCursorFallbackPriority = element.style.getPropertyPriority("cursor");
+		}
+
+		element.style.setProperty("cursor", "none", "important");
+	}
+
 	function ensureShadowCursorAppearance(shadowRoot) {
 		if (!(shadowRoot instanceof ShadowRoot)) {
 			return;
@@ -115,7 +182,10 @@
 			shadowRoot.append(styleElement);
 		}
 
-		styleElement.textContent = getCaptureCursorCss({ includeDot: false });
+		styleElement.textContent = getCaptureCursorCss({
+			includeDot: false,
+			inShadowRoot: true,
+		});
 	}
 
 	function syncOpenShadowRoots(root) {
@@ -216,6 +286,7 @@
 
 	function removeCaptureCursorAppearance() {
 		stopCursorAppearanceObserver();
+		restoreInlineCursorFallback();
 		removeShadowCursorAppearance(document);
 		document.getElementById(CAPTURE_CURSOR_STYLE_ID)?.remove();
 		document.getElementById(CAPTURE_CURSOR_DOT_ID)?.remove();
@@ -462,6 +533,7 @@
 			cursor: resolvedCursor,
 		};
 		state.lastButtons = resolvedButtons;
+		syncInlineCursorFallback(target ?? null, resolvedCursor);
 		updateCaptureCursorPosition(safeX, safeY);
 	}
 
@@ -499,6 +571,7 @@
 			});
 			return;
 		}
+		syncInlineCursorFallback(target ?? null, cursor || state.lastPointer?.cursor || "default");
 		try {
 			window.parent.postMessage(
 				{
@@ -686,10 +759,11 @@
 		}
 
 		const target = document.elementFromPoint(state.lastPointer.x, state.lastPointer.y);
+		const cursor = getCursor(target);
 		if (state.shouldHideNativeCursor) {
+			syncInlineCursorFallback(target, cursor);
 			updateCaptureCursorPosition(state.lastPointer.x, state.lastPointer.y);
 		}
-		const cursor = getCursor(target);
 		if (cursor === state.lastPointer.cursor) {
 			return;
 		}
