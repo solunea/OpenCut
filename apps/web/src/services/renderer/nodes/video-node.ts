@@ -93,12 +93,11 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 			}
 		}
 
-		const frameWindow = await videoCache.getFrameWindowAt({
+		const frame = await videoCache.getFrameAt({
 			mediaId: this.params.mediaId,
 			file: this.params.file,
 			time: videoTime,
 		});
-		const frame = frameWindow.currentFrame;
 
 		if (frame) {
 			this.renderVisual({
