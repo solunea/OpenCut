@@ -591,6 +591,10 @@
 			});
 			return;
 		}
+
+		if (state.shouldHideNativeCursor) {
+			suppressCursorOnTargetChain(target ?? null);
+		}
 		try {
 			window.parent.postMessage(
 				{
