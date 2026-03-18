@@ -22,8 +22,7 @@ void main() {
   float rotationY = radians(u_rotationY) * u_strength;
   float perspective = clamp(u_perspective, 0.0, 1.0) * u_strength;
   vec4 baseColor = texture2D(u_texture, v_texCoord);
-  vec2 zoomCoord = u_focus + (v_texCoord - u_focus) / scale;
-  vec2 centered = zoomCoord - vec2(0.5, 0.5);
+  vec2 centered = v_texCoord - vec2(0.5, 0.5);
   float cosR = cos(rotationX);
   float sinR = sin(rotationX);
   vec2 rotated = vec2(
@@ -44,7 +43,8 @@ void main() {
   sampleOffset.y += tiltX * rotated.x * (0.12 + perspective * 0.28) / depthX;
   sampleOffset.x += rotationY * rotated.x * (0.22 + perspective * 0.2);
   sampleOffset.y += rotationY * rotated.x * perspective * 0.08;
-  vec2 sampleCoord = vec2(0.5, 0.5) + sampleOffset;
+  vec2 tiltedCoord = vec2(0.5, 0.5) + sampleOffset;
+  vec2 sampleCoord = u_focus + (tiltedCoord - u_focus) / scale;
   vec4 zoomedColor = texture2D(u_texture, sampleCoord);
   float keepFrameFixed = step(0.5, u_keepFrameFixed);
   float opaqueInterior = smoothstep(0.98, 0.999, baseColor.a);
