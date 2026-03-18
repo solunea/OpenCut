@@ -68,15 +68,29 @@ export function resolveTextAnimationState({
 		};
 	}
 
+	const availableAnimationDuration = Math.max(0, duration - maxSegmentDelay);
+	const requestedDurationIn = Math.max(0, normalized.durationIn);
+	const requestedDurationOut = Math.max(0, normalized.durationOut);
+	const minimumVisibleDuration =
+		requestedDurationIn > 0 && requestedDurationOut > 0
+			? Math.min(0.12, availableAnimationDuration * 0.2)
+			: 0;
+	const animationBudget = Math.max(0, availableAnimationDuration - minimumVisibleDuration);
+	const totalRequestedDuration = requestedDurationIn + requestedDurationOut;
+	const durationScale =
+		totalRequestedDuration > 0 && totalRequestedDuration > animationBudget
+			? animationBudget / totalRequestedDuration
+			: 1;
+
 	const durationIn = clamp({
-		value: normalized.durationIn,
+		value: requestedDurationIn * durationScale,
 		min: 0,
-		max: duration,
+		max: animationBudget,
 	});
 	const durationOut = clamp({
-		value: normalized.durationOut,
+		value: requestedDurationOut * durationScale,
 		min: 0,
-		max: duration,
+		max: Math.max(0, animationBudget - durationIn),
 	});
 	const distance = Math.max(0, normalized.distance);
 	const intensity = Math.max(0, normalized.intensity);
@@ -134,7 +148,7 @@ export function resolveTextAnimationState({
 	}
 
 	if (durationOut > 0) {
-		const exitStart = Math.max(0, duration - durationOut - maxSegmentDelay);
+		const exitStart = Math.max(0, durationIn + minimumVisibleDuration);
 		const exitProgress = clamp({
 			value: (delayedLocalTime - exitStart) / durationOut,
 			min: 0,

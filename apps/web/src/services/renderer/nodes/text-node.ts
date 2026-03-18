@@ -23,7 +23,10 @@ import {
 	resolveOpacityAtTime,
 	resolveTransformAtTime,
 } from "@/lib/animation";
-import { resolveTextAnimationState } from "@/lib/text/animation";
+import {
+	normalizeTextAnimation,
+	resolveTextAnimationState,
+} from "@/lib/text/animation";
 import { resolveEffectParamsAtTime } from "@/lib/animation/effect-param-channel";
 import { applyRendererEffect } from "../effect-applier";
 import { clamp } from "@/utils/math";
@@ -207,12 +210,33 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 		const granularity = this.params.textAnimation?.granularity ?? "whole";
 		const isSegmentedAnimation = granularity !== "whole";
-		const stagger = this.params.textAnimation?.stagger ?? 0;
+		const normalizedTextAnimation = normalizeTextAnimation({
+			textAnimation: this.params.textAnimation,
+		});
+		const stagger = normalizedTextAnimation.stagger;
 		const animatedSegmentCount = getAnimatedSegmentCount({
 			lines,
 			granularity,
 		});
-		const maxSegmentDelay = Math.max(0, animatedSegmentCount - 1) * stagger;
+		const segmentCountMinusOne = Math.max(0, animatedSegmentCount - 1);
+		const minimumVisibleDuration =
+			normalizedTextAnimation.durationIn > 0 && normalizedTextAnimation.durationOut > 0
+				? Math.min(0.12, this.params.duration * 0.2)
+				: 0;
+		const maxSegmentDelayBudget = Math.max(
+			0,
+			this.params.duration -
+				normalizedTextAnimation.durationIn -
+				normalizedTextAnimation.durationOut -
+				minimumVisibleDuration,
+		);
+		const requestedMaxSegmentDelay = segmentCountMinusOne * stagger;
+		const effectiveMaxSegmentDelay = Math.min(
+			requestedMaxSegmentDelay,
+			maxSegmentDelayBudget,
+		);
+		const effectiveStagger =
+			segmentCountMinusOne > 0 ? effectiveMaxSegmentDelay / segmentCountMinusOne : 0;
 		const renderedTransform = isSegmentedAnimation
 			? transform
 			: textAnimationState.transform;
@@ -351,15 +375,15 @@ export class TextNode extends BaseNode<TextNodeParams> {
 					const segmentWidth = ctx.measureText(segment).width;
 					const shouldAnimateSegment = /\S/.test(segment);
 					const segmentDelay = shouldAnimateSegment
-						? animatedSegmentIndex * stagger
-						: Math.max(0, animatedSegmentIndex - 1) * stagger;
+						? animatedSegmentIndex * effectiveStagger
+						: Math.max(0, animatedSegmentIndex - 1) * effectiveStagger;
 					const segmentState = resolveTextAnimationState({
 						textAnimation: this.params.textAnimation,
 						transform: IDENTITY_TRANSFORM,
 						localTime,
 						duration: this.params.duration,
 						segmentDelay,
-						maxSegmentDelay,
+						maxSegmentDelay: effectiveMaxSegmentDelay,
 					});
 
 					ctx.save();
