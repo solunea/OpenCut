@@ -405,10 +405,14 @@ export function resolveZoomTransitionState({
 	effectParams,
 	boundary,
 	travelProgress,
+	cursorTracking,
+	sourceTime,
 }: {
 	effectParams: EffectParamValues;
 	boundary?: ZoomTransitionBoundary;
 	travelProgress?: number;
+	cursorTracking?: CursorTrackingData;
+	sourceTime?: number;
 }): ZoomTransitionState {
 	const keepFrameFixed = resolveBoolean({
 		value: effectParams.keepFrameFixed,
@@ -419,7 +423,11 @@ export function resolveZoomTransitionState({
 	void _boundary;
 	void _travelProgress;
 	const tiltEnabled = resolveTiltEnabled({ effectParams });
-	const focusState = resolveZoomFocusState({ effectParams });
+	const focusState = resolveZoomFocusState({
+		effectParams,
+		cursorTracking,
+		sourceTime,
+	});
 
 	return {
 		zoom: Math.max(resolveNumber({ value: effectParams.zoom, fallback: 1.35 }), 1),

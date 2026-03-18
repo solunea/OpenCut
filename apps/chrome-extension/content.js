@@ -14,6 +14,7 @@
 	const FRAME_RELAY_NAMESPACE = "opencut-cursor-frame-relay";
 	const CAPTURE_CURSOR_STYLE_ID = "opencut-capture-cursor-style";
 	const CAPTURE_CURSOR_DOT_ID = "opencut-capture-cursor-dot";
+	const CAPTURE_CURSOR_SHADOW_STYLE_ATTRIBUTE = "data-opencut-capture-cursor-shadow-style";
 
 	const state = {
 		isTracking: false,
@@ -26,6 +27,8 @@
 		lastMoveX: null,
 		lastMoveY: null,
 		shouldHideNativeCursor: false,
+		cursorAppearanceObserver: null,
+		hiddenCursorElements: new Map(),
 	};
 
 	function clamp(value, min, max) {
@@ -67,7 +70,202 @@
 		return Math.max(0, (performance.now() - state.startedAtPerf) / 1000);
 	}
 
+	function getCaptureCursorCss({ includeDot }) {
+		return `
+			html,
+			body,
+			html *,
+			body *,
+			html *::before,
+			html *::after,
+			body *::before,
+			body *::after {
+				cursor: none !important;
+			}
+
+			${includeDot ? `#${CAPTURE_CURSOR_DOT_ID} {
+				position: fixed !important;
+				left: 0;
+				top: 0;
+				width: 4px;
+				height: 4px;
+				border-radius: 9999px;
+				background: rgba(255, 255, 255, 0.48);
+				box-shadow:
+					0 0 0 1px rgba(15, 23, 42, 0.22),
+					0 0 6px rgba(255, 255, 255, 0.12);
+				transform: translate(-50%, -50%);
+				pointer-events: none !important;
+				z-index: 2147483647 !important;
+				display: none;
+			}` : ""}
+		`;
+	}
+
+	function hideCursorInlineOnElement(element) {
+		if (!(element instanceof Element) || !element.style) {
+			return;
+		}
+
+		if (!state.hiddenCursorElements.has(element)) {
+			state.hiddenCursorElements.set(element, {
+				value: element.style.getPropertyValue("cursor"),
+				priority: element.style.getPropertyPriority("cursor"),
+			});
+		}
+
+		element.style.setProperty("cursor", "none", "important");
+	}
+
+	function restoreHiddenCursorElements() {
+		for (const [element, previous] of state.hiddenCursorElements.entries()) {
+			if (!(element instanceof Element) || !element.style) {
+				continue;
+			}
+
+			if (previous.value) {
+				element.style.setProperty("cursor", previous.value, previous.priority || undefined);
+			} else {
+				element.style.removeProperty("cursor");
+			}
+		}
+
+		state.hiddenCursorElements.clear();
+	}
+
+	function suppressCursorOnTargetChain(target) {
+		hideCursorInlineOnElement(document.documentElement);
+		if (document.body) {
+			hideCursorInlineOnElement(document.body);
+		}
+
+		let current = target instanceof Element ? target : null;
+		while (current) {
+			hideCursorInlineOnElement(current);
+			const rootNode = current.getRootNode?.();
+			if (rootNode instanceof ShadowRoot && rootNode.host instanceof Element) {
+				current = rootNode.host;
+				continue;
+			}
+			current = current.parentElement;
+		}
+	}
+
+	function ensureShadowCursorAppearance(shadowRoot) {
+		if (!(shadowRoot instanceof ShadowRoot)) {
+			return;
+		}
+
+		let styleElement = shadowRoot.querySelector(
+			`style[${CAPTURE_CURSOR_SHADOW_STYLE_ATTRIBUTE}="true"]`,
+		);
+		if (!(styleElement instanceof HTMLStyleElement)) {
+			styleElement = document.createElement("style");
+			styleElement.setAttribute(CAPTURE_CURSOR_SHADOW_STYLE_ATTRIBUTE, "true");
+			shadowRoot.append(styleElement);
+		}
+
+		styleElement.textContent = getCaptureCursorCss({ includeDot: false });
+	}
+
+	function syncOpenShadowRoots(root) {
+		if (!state.shouldHideNativeCursor) {
+			return;
+		}
+
+		const stack = [];
+		if (root instanceof Document) {
+			if (root.documentElement) {
+				stack.push(root.documentElement);
+			}
+		} else if (root instanceof ShadowRoot) {
+			stack.push(...root.querySelectorAll("*"));
+		} else if (root instanceof Element) {
+			stack.push(root);
+		}
+
+		while (stack.length > 0) {
+			const node = stack.pop();
+			if (!(node instanceof Element)) {
+				continue;
+			}
+
+			if (node.shadowRoot) {
+				ensureShadowCursorAppearance(node.shadowRoot);
+				stack.push(...node.shadowRoot.querySelectorAll("*"));
+			}
+
+			stack.push(...node.children);
+		}
+	}
+
+	function startCursorAppearanceObserver() {
+		if (state.cursorAppearanceObserver || !document.documentElement) {
+			return;
+		}
+
+		const observer = new MutationObserver((mutations) => {
+			if (!state.shouldHideNativeCursor) {
+				return;
+			}
+
+			ensureCaptureCursorAppearance();
+			for (const mutation of mutations) {
+				for (const node of mutation.addedNodes) {
+					if (node instanceof Element) {
+						syncOpenShadowRoots(node);
+					}
+				}
+			}
+		});
+
+		observer.observe(document.documentElement, {
+			childList: true,
+			subtree: true,
+		});
+		state.cursorAppearanceObserver = observer;
+	}
+
+	function stopCursorAppearanceObserver() {
+		state.cursorAppearanceObserver?.disconnect();
+		state.cursorAppearanceObserver = null;
+	}
+
+	function removeShadowCursorAppearance(root) {
+		const stack = [];
+		if (root instanceof Document) {
+			if (root.documentElement) {
+				stack.push(root.documentElement);
+			}
+		} else if (root instanceof Element) {
+			stack.push(root);
+		}
+
+		while (stack.length > 0) {
+			const node = stack.pop();
+			if (!(node instanceof Element)) {
+				continue;
+			}
+
+			if (node.shadowRoot) {
+				node.shadowRoot
+					.querySelectorAll(`style[${CAPTURE_CURSOR_SHADOW_STYLE_ATTRIBUTE}="true"]`)
+					.forEach((styleElement) => styleElement.remove());
+				stack.push(...node.shadowRoot.querySelectorAll("*"));
+			}
+
+			stack.push(...node.children);
+		}
+	}
+
+	function resolvePointerTarget(target) {
+		return target instanceof Element ? target : null;
+	}
+
 	function removeCaptureCursorAppearance() {
+		stopCursorAppearanceObserver();
+		restoreHiddenCursorElements();
+		removeShadowCursorAppearance(document);
 		document.getElementById(CAPTURE_CURSOR_STYLE_ID)?.remove();
 		document.getElementById(CAPTURE_CURSOR_DOT_ID)?.remove();
 	}
@@ -77,32 +275,9 @@
 		if (!(styleElement instanceof HTMLStyleElement)) {
 			styleElement = document.createElement("style");
 			styleElement.id = CAPTURE_CURSOR_STYLE_ID;
-			styleElement.textContent = `
-				html,
-				body,
-				body * {
-					cursor: none !important;
-				}
-
-				#${CAPTURE_CURSOR_DOT_ID} {
-					position: fixed !important;
-					left: 0;
-					top: 0;
-					width: 4px;
-					height: 4px;
-					border-radius: 9999px;
-					background: rgba(255, 255, 255, 0.48);
-					box-shadow:
-						0 0 0 1px rgba(15, 23, 42, 0.22),
-						0 0 6px rgba(255, 255, 255, 0.12);
-					transform: translate(-50%, -50%);
-					pointer-events: none !important;
-					z-index: 2147483647 !important;
-					display: none;
-				}
-			`;
 			(document.head || document.documentElement).append(styleElement);
 		}
+		styleElement.textContent = getCaptureCursorCss({ includeDot: true });
 
 		let cursorElement = document.getElementById(CAPTURE_CURSOR_DOT_ID);
 		if (!(cursorElement instanceof HTMLElement)) {
@@ -112,10 +287,17 @@
 			document.documentElement.append(cursorElement);
 		}
 
+		startCursorAppearanceObserver();
+		syncOpenShadowRoots(document);
+		hideCursorInlineOnElement(document.documentElement);
+		if (document.body) {
+			hideCursorInlineOnElement(document.body);
+		}
+
 		return cursorElement;
 	}
 
-	function updateCaptureCursorPosition(x, y) {
+	function updateCaptureCursorPosition(x, y, target) {
 		if (!state.shouldHideNativeCursor) {
 			return;
 		}
@@ -128,6 +310,7 @@
 		cursorElement.style.display = "block";
 		cursorElement.style.left = `${x}px`;
 		cursorElement.style.top = `${y}px`;
+		suppressCursorOnTargetChain(target);
 	}
 
 	function syncCaptureCursorAppearance() {
@@ -146,7 +329,11 @@
 			return;
 		}
 
-		updateCaptureCursorPosition(state.lastPointer.x, state.lastPointer.y);
+		updateCaptureCursorPosition(
+			state.lastPointer.x,
+			state.lastPointer.y,
+			document.elementFromPoint(state.lastPointer.x, state.lastPointer.y),
+		);
 	}
 
 	function isTopFrame() {
@@ -326,7 +513,7 @@
 			cursor: resolvedCursor,
 		};
 		state.lastButtons = resolvedButtons;
-		updateCaptureCursorPosition(safeX, safeY);
+		updateCaptureCursorPosition(safeX, safeY, null);
 	}
 
 	function relayTrackedEvent({
@@ -457,13 +644,15 @@
 	window.addEventListener(
 		"mousemove",
 		(event) => {
+			const target = resolvePointerTarget(event.composedPath?.()[0] ?? event.target);
 			relayTrackedEvent({
 				type: "move",
 				x: event.clientX,
 				y: event.clientY,
-				cursor: getCursor(event.target),
+				cursor: getCursor(target),
 				buttons: event.buttons,
 			});
+			updateCaptureCursorPosition(event.clientX, event.clientY, target);
 		},
 		{ capture: true, passive: true },
 	);
@@ -471,14 +660,16 @@
 	window.addEventListener(
 		"mousedown",
 		(event) => {
+			const target = resolvePointerTarget(event.composedPath?.()[0] ?? event.target);
 			relayTrackedEvent({
 				type: "down",
 				x: event.clientX,
 				y: event.clientY,
-				cursor: getCursor(event.target),
+				cursor: getCursor(target),
 				button: event.button,
 				buttons: event.buttons,
 			});
+			updateCaptureCursorPosition(event.clientX, event.clientY, target);
 		},
 		{ capture: true, passive: true },
 	);
@@ -486,14 +677,16 @@
 	window.addEventListener(
 		"mouseup",
 		(event) => {
+			const target = resolvePointerTarget(event.composedPath?.()[0] ?? event.target);
 			relayTrackedEvent({
 				type: "up",
 				x: event.clientX,
 				y: event.clientY,
-				cursor: getCursor(event.target),
+				cursor: getCursor(target),
 				button: event.button,
 				buttons: event.buttons,
 			});
+			updateCaptureCursorPosition(event.clientX, event.clientY, target);
 		},
 		{ capture: true, passive: true },
 	);
@@ -501,17 +694,19 @@
 	window.addEventListener(
 		"wheel",
 		(event) => {
+			const target = resolvePointerTarget(event.composedPath?.()[0] ?? event.target);
 			relayTrackedEvent({
 				type: "wheel",
 				x: event.clientX,
 				y: event.clientY,
-				cursor: getCursor(event.target),
+				cursor: getCursor(target),
 				buttons: event.buttons,
 				deltaX: event.deltaX,
 				deltaY: event.deltaY,
 				scrollX: window.scrollX,
 				scrollY: window.scrollY,
 			});
+			updateCaptureCursorPosition(event.clientX, event.clientY, target);
 		},
 		{ capture: true, passive: true },
 	);
@@ -540,6 +735,9 @@
 		}
 
 		const target = document.elementFromPoint(state.lastPointer.x, state.lastPointer.y);
+		if (state.shouldHideNativeCursor) {
+			updateCaptureCursorPosition(state.lastPointer.x, state.lastPointer.y, target);
+		}
 		const cursor = getCursor(target);
 		if (cursor === state.lastPointer.cursor) {
 			return;

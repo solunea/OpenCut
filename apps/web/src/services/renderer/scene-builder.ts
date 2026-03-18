@@ -16,10 +16,24 @@ import type { BaseNode } from "./nodes/base-node";
 import type { TBackground, TCanvasSize } from "@/types/project";
 import { DEFAULT_BLUR_INTENSITY } from "@/constants/project-constants";
 import { isMainTrack } from "@/lib/timeline";
+import {
+	getClampedVideoSourceTimeFromTimelineTime,
+	getSourceTimeFromTimelineTime,
+} from "@/lib/timeline/clip-speed";
 
 const PREVIEW_MAX_IMAGE_SIZE = 2048;
 const BLUR_BACKGROUND_ZOOM_SCALE = 1.4;
 const EFFECT_TIME_EPSILON = 1e-6;
+
+type TrackedVideoSource = {
+	startTime: number;
+	duration: number;
+	trimStart: number;
+	playbackRate?: number;
+	freezeFrameStart?: number;
+	freezeFrameEnd?: number;
+	cursorTracking?: MediaAsset["cursorTracking"];
+};
 
 function getVisibleSortedElements({
 	track,
@@ -49,10 +63,12 @@ function resolveAdjacentZoomState({
 	currentElement,
 	adjacentElement,
 	isPrevious,
+	trackedVideoSources,
 }: {
 	currentElement: EffectElement;
 	adjacentElement: TimelineElement | undefined;
 	isPrevious: boolean;
+	trackedVideoSources: TrackedVideoSource[];
 }): ZoomTransitionState | undefined {
 	if (adjacentElement?.type !== "effect" || adjacentElement.effectType !== "zoom") {
 		return undefined;
@@ -72,18 +88,35 @@ function resolveAdjacentZoomState({
 		return undefined;
 	}
 
+	const boundaryTime = isPrevious
+		? currentElement.startTime
+		: currentElement.startTime + currentElement.duration;
+	const trackedVideoSource = resolveTrackedVideoSourceAtTime({
+		time: boundaryTime,
+		trackedVideoSources,
+	});
+
 	return resolveZoomTransitionState({
 		effectParams: adjacentElement.params,
 		boundary: isPrevious ? "end" : "start",
+		cursorTracking: trackedVideoSource?.cursorTracking,
+		sourceTime: trackedVideoSource
+			? getTrackedVideoSourceTime({
+					time: boundaryTime,
+					trackedVideoSource,
+			  })
+			: undefined,
 	});
 }
 
 function resolveZoomTransition({
 	elements,
 	index,
+	trackedVideoSources,
 }: {
 	elements: TimelineElement[];
 	index: number;
+	trackedVideoSources: TrackedVideoSource[];
 }): ZoomEffectTransition | undefined {
 	const currentElement = elements[index];
 	if (currentElement?.type !== "effect" || currentElement.effectType !== "zoom") {
@@ -94,11 +127,13 @@ function resolveZoomTransition({
 		currentElement,
 		adjacentElement: elements[index - 1],
 		isPrevious: true,
+		trackedVideoSources,
 	});
 	const next = resolveAdjacentZoomState({
 		currentElement,
 		adjacentElement: elements[index + 1],
 		isPrevious: false,
+		trackedVideoSources,
 	});
 
 	if (!previous && !next) {
@@ -106,6 +141,65 @@ function resolveZoomTransition({
 	}
 
 	return { previous, next };
+}
+
+function isTrackedVideoSourceInRange({
+	time,
+	trackedVideoSource,
+}: {
+	time: number;
+	trackedVideoSource: TrackedVideoSource;
+}): boolean {
+	return (
+		time >= trackedVideoSource.startTime - EFFECT_TIME_EPSILON &&
+		time < trackedVideoSource.startTime + trackedVideoSource.duration
+	);
+}
+
+function resolveTrackedVideoSourceAtTime({
+	time,
+	trackedVideoSources,
+}: {
+	time: number;
+	trackedVideoSources: TrackedVideoSource[];
+}): TrackedVideoSource | undefined {
+	for (const trackedVideoSource of trackedVideoSources) {
+		if (isTrackedVideoSourceInRange({ time, trackedVideoSource })) {
+			return trackedVideoSource;
+		}
+	}
+
+	return undefined;
+}
+
+function getTrackedVideoSourceTime({
+	time,
+	trackedVideoSource,
+}: {
+	time: number;
+	trackedVideoSource: TrackedVideoSource;
+}): number {
+	if (
+		typeof trackedVideoSource.freezeFrameStart === "number" ||
+		typeof trackedVideoSource.freezeFrameEnd === "number"
+	) {
+		return getClampedVideoSourceTimeFromTimelineTime({
+			timelineTime: time,
+			startTime: trackedVideoSource.startTime,
+			trimStart: trackedVideoSource.trimStart,
+			duration: trackedVideoSource.duration,
+			playbackRate: trackedVideoSource.playbackRate,
+			freezeFrameStart: trackedVideoSource.freezeFrameStart,
+			freezeFrameEnd: trackedVideoSource.freezeFrameEnd,
+		});
+	}
+
+	return getSourceTimeFromTimelineTime({
+		timelineTime: time,
+		startTime: trackedVideoSource.startTime,
+		trimStart: trackedVideoSource.trimStart,
+		playbackRate: trackedVideoSource.playbackRate,
+	});
 }
 
 function collectTrackedVideoSources({
@@ -116,16 +210,8 @@ function collectTrackedVideoSources({
 	tracks: TimelineTrack[];
 	mediaMap: Map<string, MediaAsset>;
 	beforeTrackIndex: number;
-}) {
-	const trackedSources: Array<{
-		startTime: number;
-		duration: number;
-		trimStart: number;
-		playbackRate?: number;
-		freezeFrameStart?: number;
-		freezeFrameEnd?: number;
-		cursorTracking?: MediaAsset["cursorTracking"];
-	}> = [];
+}): TrackedVideoSource[] {
+	const trackedSources: TrackedVideoSource[] = [];
 
 	for (let trackIndex = beforeTrackIndex - 1; trackIndex >= 0; trackIndex -= 1) {
 		const track = tracks[trackIndex];
@@ -175,18 +261,23 @@ function buildTrackNodes({
 		for (let index = 0; index < elements.length; index += 1) {
 			const element = elements[index];
 			if (element.type === "effect") {
+				const trackedVideoSources = collectTrackedVideoSources({
+					tracks,
+					mediaMap,
+					beforeTrackIndex: trackIndex,
+				});
 				nodes.push(
 					new EffectLayerNode({
 						effectType: element.effectType,
 						effectParams: element.params,
 						timeOffset: element.startTime,
 						duration: element.duration,
-						zoomTransition: resolveZoomTransition({ elements, index }),
-						trackedVideoSources: collectTrackedVideoSources({
-							tracks,
-							mediaMap,
-							beforeTrackIndex: trackIndex,
+						zoomTransition: resolveZoomTransition({
+							elements,
+							index,
+							trackedVideoSources,
 						}),
+						trackedVideoSources,
 					}),
 				);
 				continue;
