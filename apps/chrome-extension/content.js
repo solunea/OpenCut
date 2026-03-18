@@ -28,8 +28,6 @@
 		lastMoveY: null,
 		shouldHideNativeCursor: false,
 		cursorAppearanceObserver: null,
-		hiddenCursorElements: new Map(),
-		activeSuppressedCursorElements: [],
 	};
 
 	function clamp(value, min, max) {
@@ -101,86 +99,6 @@
 				display: none;
 			}` : ""}
 		`;
-	}
-
-	function hideCursorInlineOnElement(element) {
-		if (!(element instanceof Element) || !element.style) {
-			return;
-		}
-
-		if (!state.hiddenCursorElements.has(element)) {
-			state.hiddenCursorElements.set(element, {
-				value: element.style.getPropertyValue("cursor"),
-				priority: element.style.getPropertyPriority("cursor"),
-			});
-		}
-
-		element.style.setProperty("cursor", "none", "important");
-	}
-
-	function restoreHiddenCursorElements() {
-		for (const [element, previous] of state.hiddenCursorElements.entries()) {
-			if (!(element instanceof Element) || !element.style) {
-				continue;
-			}
-
-			if (previous.value) {
-				element.style.setProperty("cursor", previous.value, previous.priority || undefined);
-			} else {
-				element.style.removeProperty("cursor");
-			}
-		}
-
-		state.hiddenCursorElements.clear();
-		state.activeSuppressedCursorElements = [];
-	}
-
-	function restoreCursorSuppressionChain() {
-		for (const element of state.activeSuppressedCursorElements) {
-			const previous = state.hiddenCursorElements.get(element);
-			if (!(element instanceof Element) || !element.style || !previous) {
-				continue;
-			}
-
-			if (previous.value) {
-				element.style.setProperty("cursor", previous.value, previous.priority || undefined);
-			} else {
-				element.style.removeProperty("cursor");
-			}
-
-			state.hiddenCursorElements.delete(element);
-		}
-
-		state.activeSuppressedCursorElements = [];
-	}
-
-	function suppressCursorOnTargetChain(target) {
-		restoreCursorSuppressionChain();
-
-		const elements = [];
-		if (document.documentElement) {
-			elements.push(document.documentElement);
-		}
-		if (document.body) {
-			elements.push(document.body);
-		}
-
-		let current = target instanceof Element ? target : null;
-		while (current) {
-			elements.push(current);
-			const rootNode = current.getRootNode?.();
-			if (rootNode instanceof ShadowRoot && rootNode.host instanceof Element) {
-				current = rootNode.host;
-				continue;
-			}
-			current = current.parentElement;
-		}
-
-		const uniqueElements = [...new Set(elements)];
-		for (const element of uniqueElements) {
-			hideCursorInlineOnElement(element);
-		}
-		state.activeSuppressedCursorElements = uniqueElements;
 	}
 
 	function ensureShadowCursorAppearance(shadowRoot) {
@@ -298,7 +216,6 @@
 
 	function removeCaptureCursorAppearance() {
 		stopCursorAppearanceObserver();
-		restoreHiddenCursorElements();
 		removeShadowCursorAppearance(document);
 		document.getElementById(CAPTURE_CURSOR_STYLE_ID)?.remove();
 		document.getElementById(CAPTURE_CURSOR_DOT_ID)?.remove();
@@ -328,16 +245,12 @@
 		if (shouldInitializeGlobalSuppression) {
 			startCursorAppearanceObserver();
 			syncOpenShadowRoots(document);
-			hideCursorInlineOnElement(document.documentElement);
-			if (document.body) {
-				hideCursorInlineOnElement(document.body);
-			}
 		}
 
 		return cursorElement;
 	}
 
-	function updateCaptureCursorPosition(x, y, target) {
+	function updateCaptureCursorPosition(x, y) {
 		if (!state.shouldHideNativeCursor) {
 			return;
 		}
@@ -350,7 +263,6 @@
 		cursorElement.style.display = "block";
 		cursorElement.style.left = `${x}px`;
 		cursorElement.style.top = `${y}px`;
-		suppressCursorOnTargetChain(target);
 	}
 
 	function syncCaptureCursorAppearance() {
@@ -369,11 +281,7 @@
 			return;
 		}
 
-		updateCaptureCursorPosition(
-			state.lastPointer.x,
-			state.lastPointer.y,
-			document.elementFromPoint(state.lastPointer.x, state.lastPointer.y),
-		);
+		updateCaptureCursorPosition(state.lastPointer.x, state.lastPointer.y);
 	}
 
 	function isTopFrame() {
@@ -554,7 +462,7 @@
 			cursor: resolvedCursor,
 		};
 		state.lastButtons = resolvedButtons;
-		updateCaptureCursorPosition(safeX, safeY, target ?? null);
+		updateCaptureCursorPosition(safeX, safeY);
 	}
 
 	function relayTrackedEvent({
@@ -590,10 +498,6 @@
 				force,
 			});
 			return;
-		}
-
-		if (state.shouldHideNativeCursor) {
-			suppressCursorOnTargetChain(target ?? null);
 		}
 		try {
 			window.parent.postMessage(
@@ -783,7 +687,7 @@
 
 		const target = document.elementFromPoint(state.lastPointer.x, state.lastPointer.y);
 		if (state.shouldHideNativeCursor) {
-			updateCaptureCursorPosition(state.lastPointer.x, state.lastPointer.y, target);
+			updateCaptureCursorPosition(state.lastPointer.x, state.lastPointer.y);
 		}
 		const cursor = getCursor(target);
 		if (cursor === state.lastPointer.cursor) {
