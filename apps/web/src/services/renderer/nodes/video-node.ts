@@ -77,6 +77,7 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 			this.params.duration <= 0
 				? 1
 				: Math.min(animationLocalTime / this.params.duration, 1);
+		const sourceLocalTime = this.getSourceLocalTime({ time });
 		let shouldFallback = false;
 
 		for (const effect of enabledZoomEffects) {
@@ -89,6 +90,7 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 				effectParams: resolvedParams,
 				progress,
 				duration: this.params.duration,
+				sourceTime: sourceLocalTime,
 			});
 
 			if (renderState.keepFrameFixed) {

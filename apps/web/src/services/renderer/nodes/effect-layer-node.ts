@@ -129,18 +129,19 @@ export class EffectLayerNode extends BaseNode<EffectLayerNodeParams> {
 			time,
 			trackedVideoSources: this.params.trackedVideoSources,
 		});
+		const trackedSourceTime = trackedVideoSource
+			? getTrackedVideoSourceTime({
+					time,
+					trackedVideoSource,
+			  })
+			: undefined;
 		const renderParams =
 			this.params.effectType === "zoom"
 				? resolveZoomEffectParamsForRender({
 						effectParams: this.params.effectParams,
 						cursorTracking: trackedVideoSource?.cursorTracking,
-						sourceTime: trackedVideoSource
-							? getTrackedVideoSourceTime({
-									time,
-									trackedVideoSource,
-							  })
-							: undefined,
-					})
+						sourceTime: trackedSourceTime,
+				  })
 				: this.params.effectParams;
 
 		const effectResult = applyRendererEffect({
@@ -152,6 +153,7 @@ export class EffectLayerNode extends BaseNode<EffectLayerNodeParams> {
 			localTime,
 			duration: this.params.duration,
 			progress,
+			sourceTime: trackedSourceTime,
 			zoomTransition: this.params.zoomTransition,
 		});
 

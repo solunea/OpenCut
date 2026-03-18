@@ -477,12 +477,18 @@ export function resolveZoomRenderState({
 	const resolvedDuration =
 		typeof duration === "number" && duration > 0 ? duration : 1;
 	const localTime = clampedProgress * resolvedDuration;
+	const effectStartSourceTime =
+		typeof sourceTime === "number" && Number.isFinite(sourceTime)
+			? sourceTime - localTime
+			: null;
+	const shouldSkipEntryTransition =
+		!hasPrevious && effectStartSourceTime !== null && effectStartSourceTime <= 1;
 	const configuredEases = resolveConfiguredEaseDurations({
 		effectParams,
 		duration: resolvedDuration,
 	});
 	const { entrySeconds, exitSeconds } = resolveActiveEaseDurations({
-		entrySeconds: configuredEases.entrySeconds,
+		entrySeconds: shouldSkipEntryTransition ? 0 : configuredEases.entrySeconds,
 		exitSeconds: configuredEases.exitSeconds,
 		duration: resolvedDuration,
 		hasNext,
@@ -671,11 +677,12 @@ export const zoomEffectDefinition: EffectDefinition = {
 		passes: [
 			{
 				fragmentShader: zoomFragmentShader,
-				uniforms: ({ effectParams, progress, duration, zoomTransition }) => {
+				uniforms: ({ effectParams, progress, duration, sourceTime, zoomTransition }) => {
 					const renderState = resolveZoomRenderState({
 						effectParams,
 						progress: progress ?? 1,
 						duration,
+						sourceTime,
 						zoomTransition,
 					});
 

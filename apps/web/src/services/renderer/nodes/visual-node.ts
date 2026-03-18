@@ -608,6 +608,7 @@ export abstract class VisualNode<
 				localTime: animationLocalTime,
 				duration: this.params.duration,
 				progress,
+				sourceTime: sourceLocalTime,
 			});
 
 			if (effect.type === "zoom") {

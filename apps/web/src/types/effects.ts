@@ -69,6 +69,7 @@ export interface WebGLEffectPass {
 		localTime?: number;
 		duration?: number;
 		progress?: number;
+		sourceTime?: number;
 		zoomTransition?: ZoomEffectTransition;
 	}): Record<string, number | number[]>;
 }
