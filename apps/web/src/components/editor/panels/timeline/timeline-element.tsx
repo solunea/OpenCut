@@ -35,6 +35,7 @@ import type {
 	TimelineElement as TimelineElementType,
 	TimelineTrack,
 	VisualElement,
+	EffectElement,
 	ElementDragState,
 } from "@/types/timeline";
 import type { MediaAsset } from "@/types/assets";
@@ -63,14 +64,147 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { uppercase } from "@/utils/string";
-import type { ComponentProps, ReactNode } from "react";
+import {
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ComponentProps,
+	type ReactNode,
+} from "react";
 import type { SelectedKeyframeRef, ElementKeyframe } from "@/types/animation";
 import { cn } from "@/utils/ui";
 import { Button } from "@/components/ui/button";
 import { usePropertiesStore } from "@/stores/properties-store";
+import { getEffect } from "@/lib/effects/registry";
 
 const KEYFRAME_INDICATOR_MIN_WIDTH_PX = 40;
 const ELEMENT_RING_WIDTH_PX = 1.5;
+const ZOOM_EASE_HANDLE_HIT_WIDTH_PX = 12;
+
+function clamp(value: number, min: number, max: number): number {
+	return Math.min(Math.max(value, min), max);
+}
+
+type ZoomTimelineElement = VisualElement | EffectElement;
+
+function resolveZoomTimelineEffect({
+	element,
+}: {
+	element: ZoomTimelineElement;
+}): { id: string; type: string; params: Record<string, number | string | boolean> } | null {
+	if (element.type === "effect") {
+		if (element.effectType !== "zoom") {
+			return null;
+		}
+		return {
+			id: element.id,
+			type: element.effectType,
+			params: element.params,
+		};
+	}
+
+	const effect = (element.effects ?? []).find(
+		(item) => item.enabled && item.type === "zoom",
+	);
+	if (!effect) {
+		return null;
+	}
+
+	return {
+		id: effect.id,
+		type: effect.type,
+		params: effect.params,
+	};
+}
+
+function resolveZoomEaseSeconds({
+	element,
+	effectId,
+	paramKey,
+}: {
+	element: ZoomTimelineElement;
+	effectId: string;
+	paramKey: "ease" | "easeIn" | "easeOut";
+}): number | null {
+	if (element.type === "effect") {
+		if (element.effectType !== "zoom" || effectId !== element.id) {
+			return null;
+		}
+		const rawValue = element.params[paramKey];
+		return typeof rawValue === "number" && Number.isFinite(rawValue)
+			? rawValue
+			: null;
+	}
+
+	const channel = getElementKeyframes({ animations: element.animations }).find(
+		(keyframe) => keyframe.propertyPath === `effects.${effectId}.params.${paramKey}`,
+	);
+	if (channel) {
+		return null;
+	}
+	const effect = (element.effects ?? []).find((item) => item.id === effectId);
+	if (!effect) {
+		return null;
+	}
+	const rawValue = effect.params[paramKey];
+	return typeof rawValue === "number" && Number.isFinite(rawValue) ? rawValue : null;
+}
+
+function resolveZoomEaseBounds({
+	element,
+	effectId,
+	displayedDuration,
+}: {
+	element: ZoomTimelineElement;
+	effectId: string;
+	displayedDuration: number;
+}): { entrySeconds: number; exitSeconds: number; shared: boolean } | null {
+	const zoomEffect = resolveZoomTimelineEffect({ element });
+	if (!zoomEffect || zoomEffect.id !== effectId || displayedDuration <= 0) {
+		return null;
+	}
+	const sharedEase = resolveZoomEaseSeconds({
+		element,
+		effectId,
+		paramKey: "ease",
+	});
+	if (sharedEase !== null) {
+		const clampedEase = clamp(sharedEase, 0, displayedDuration / 2);
+		return {
+			entrySeconds: clampedEase,
+			exitSeconds: clampedEase,
+			shared: true,
+		};
+	}
+	const easeInPercent = resolveZoomEaseSeconds({
+		element,
+		effectId,
+		paramKey: "easeIn",
+	});
+	const easeOutPercent = resolveZoomEaseSeconds({
+		element,
+		effectId,
+		paramKey: "easeOut",
+	});
+	const entrySeconds =
+		displayedDuration * clamp((easeInPercent ?? 20) / 100, 0, 1);
+	const exitSeconds =
+		displayedDuration * clamp((easeOutPercent ?? 20) / 100, 0, 1);
+	const total = entrySeconds + exitSeconds;
+	if (total <= displayedDuration) {
+		return { entrySeconds, exitSeconds, shared: false };
+	}
+	if (total <= 0) {
+		return { entrySeconds: 0, exitSeconds: 0, shared: false };
+	}
+	const scale = displayedDuration / total;
+	return {
+		entrySeconds: entrySeconds * scale,
+		exitSeconds: exitSeconds * scale,
+		shared: false,
+	};
+}
 
 interface KeyframeIndicator {
 	time: number;
@@ -78,7 +212,7 @@ interface KeyframeIndicator {
 	keyframes: SelectedKeyframeRef[];
 }
 
-export function buildKeyframeIndicator({
+function buildKeyframeIndicator({
 	keyframe,
 	trackId,
 	elementId,
@@ -114,7 +248,7 @@ export function buildKeyframeIndicator({
 	};
 }
 
-export function getKeyframeIndicators({
+function getKeyframeIndicators({
 	keyframes,
 	trackId,
 	elementId,
@@ -131,11 +265,8 @@ export function getKeyframeIndicators({
 	elementLeft: number;
 	elementWidth: number;
 }): KeyframeIndicator[] {
-	if (elementWidth < KEYFRAME_INDICATOR_MIN_WIDTH_PX) {
-		return [];
-	}
+	const grouped = new Map<number, KeyframeIndicator>();
 
-	const keyframesByTime = new Map<number, KeyframeIndicator>();
 	for (const keyframe of keyframes) {
 		const indicator = buildKeyframeIndicator({
 			keyframe,
@@ -145,31 +276,30 @@ export function getKeyframeIndicators({
 			zoomLevel,
 			elementLeft,
 		});
-		const existingIndicator = keyframesByTime.get(indicator.time);
-		if (!existingIndicator) {
-			keyframesByTime.set(indicator.time, {
+		const boundedOffsetPx = clamp(indicator.offsetPx, 0, elementWidth);
+		const existing = grouped.get(indicator.time);
+		if (existing) {
+			existing.keyframes.push(indicator.keyframeRef);
+		} else {
+			grouped.set(indicator.time, {
 				time: indicator.time,
-				offsetPx: indicator.offsetPx,
+				offsetPx: boundedOffsetPx,
 				keyframes: [indicator.keyframeRef],
 			});
-			continue;
 		}
-
-		existingIndicator.keyframes.push(indicator.keyframeRef);
 	}
 
-	return [...keyframesByTime.values()].sort((a, b) => a.time - b.time);
+	return Array.from(grouped.values()).sort((left, right) => left.time - right.time);
 }
 
-export function getDisplayShortcut({ action }: { action: TActionWithOptionalArgs }) {
-	const { defaultShortcuts } = getActionDefinition({ action });
-	if (!defaultShortcuts?.length) {
-		return "";
-	}
-
-	return uppercase({
-		string: defaultShortcuts[0].replace("+", " "),
-	});
+function getDisplayShortcut({
+	action,
+}: {
+	action: TActionWithOptionalArgs;
+}): string | undefined {
+	const definition = getActionDefinition({ action });
+	const shortcut = definition.defaultShortcuts?.[0];
+	return shortcut ? uppercase({ string: shortcut.replaceAll("+", " + ") }) : undefined;
 }
 
 interface TimelineElementProps {
@@ -503,6 +633,14 @@ function ElementInner({
 							displayedFreezeFrameStart={displayedFreezeFrameStart}
 							displayedFreezeFrameEnd={displayedFreezeFrameEnd}
 						/>
+						{element.type !== "audio" && (
+							<ZoomEaseOverlay
+								element={element as ZoomTimelineElement}
+								trackId={track.id}
+								isSelected={isSelected}
+								displayedDuration={displayedDuration}
+							/>
+						)}
 						<FreezeFrameOverlay
 							element={element}
 							displayedDuration={displayedDuration}
@@ -565,6 +703,250 @@ function ResizeHandle({
 			onClick={(event) => event.stopPropagation()}
 			aria-label={`${isLeft ? "Left" : "Right"} resize handle`}
 		></button>
+	);
+}
+
+function ZoomEaseOverlay({
+	element,
+	trackId,
+	isSelected,
+	displayedDuration,
+}: {
+	element: ZoomTimelineElement;
+	trackId: string;
+	isSelected: boolean;
+	displayedDuration: number;
+}) {
+	const editor = useEditor();
+	const containerRef = useRef<HTMLDivElement | null>(null);
+	const [dragSide, setDragSide] = useState<"left" | "right" | null>(null);
+	const zoomEffect = useMemo(() => resolveZoomTimelineEffect({ element }), [element]);
+	const bounds = useMemo(
+		() =>
+			zoomEffect
+				? resolveZoomEaseBounds({
+						element,
+						effectId: zoomEffect.id,
+						displayedDuration,
+					})
+				: null,
+		[element, zoomEffect, displayedDuration],
+	);
+
+	useEffect(() => {
+		if (!dragSide || !zoomEffect || !bounds) {
+			return;
+		}
+
+		const handleMouseMove = (event: MouseEvent) => {
+			const container = containerRef.current;
+			if (!container || displayedDuration <= 0) {
+				return;
+			}
+			const rect = container.getBoundingClientRect();
+			if (rect.width <= 0) {
+				return;
+			}
+			const relativeX = clamp(event.clientX - rect.left, 0, rect.width);
+			const timeAtCursor = (relativeX / rect.width) * displayedDuration;
+
+			if (bounds.shared) {
+				const mirroredTime = dragSide === "left" ? timeAtCursor : displayedDuration - timeAtCursor;
+				const nextEase = clamp(
+					mirroredTime,
+					0,
+					Math.max(0, displayedDuration / 2),
+				);
+				if (element.type === "effect") {
+					editor.timeline.previewElements({
+						updates: [
+							{
+								trackId,
+								elementId: element.id,
+								updates: {
+									params: {
+										...element.params,
+										ease: Math.round(nextEase * 100) / 100,
+									},
+								},
+							},
+						],
+					});
+				} else {
+					editor.timeline.updateClipEffectParams({
+						trackId,
+						elementId: element.id,
+						effectId: zoomEffect.id,
+						params: { ease: Math.round(nextEase * 100) / 100 },
+						pushHistory: false,
+					});
+				}
+				return;
+			}
+
+			if (dragSide === "left") {
+				const maxEntry = Math.max(0, displayedDuration - bounds.exitSeconds);
+				const nextEntryPercent =
+					(displayedDuration <= 0
+						? 0
+						: (clamp(timeAtCursor, 0, maxEntry) / displayedDuration) * 100);
+				if (element.type === "effect") {
+					editor.timeline.previewElements({
+						updates: [
+							{
+								trackId,
+								elementId: element.id,
+								updates: {
+									params: {
+										...element.params,
+										easeIn: Math.round(nextEntryPercent * 10) / 10,
+									},
+								},
+							},
+						],
+					});
+				} else {
+					editor.timeline.updateClipEffectParams({
+						trackId,
+						elementId: element.id,
+						effectId: zoomEffect.id,
+						params: { easeIn: Math.round(nextEntryPercent * 10) / 10 },
+						pushHistory: false,
+					});
+				}
+				return;
+			}
+
+			const maxExit = Math.max(0, displayedDuration - bounds.entrySeconds);
+			const exitSeconds = clamp(displayedDuration - timeAtCursor, 0, maxExit);
+			const nextExitPercent =
+				displayedDuration <= 0 ? 0 : (exitSeconds / displayedDuration) * 100;
+			if (element.type === "effect") {
+				editor.timeline.previewElements({
+					updates: [
+						{
+							trackId,
+							elementId: element.id,
+							updates: {
+								params: {
+									...element.params,
+									easeOut: Math.round(nextExitPercent * 10) / 10,
+								},
+							},
+						},
+					],
+				});
+			} else {
+				editor.timeline.updateClipEffectParams({
+					trackId,
+					elementId: element.id,
+					effectId: zoomEffect.id,
+					params: { easeOut: Math.round(nextExitPercent * 10) / 10 },
+					pushHistory: false,
+				});
+			}
+		};
+
+		const handleMouseUp = () => {
+			setDragSide(null);
+		};
+
+		document.addEventListener("mousemove", handleMouseMove);
+		document.addEventListener("mouseup", handleMouseUp);
+
+		return () => {
+			document.removeEventListener("mousemove", handleMouseMove);
+			document.removeEventListener("mouseup", handleMouseUp);
+		};
+	}, [bounds, displayedDuration, dragSide, editor.timeline, element.id, trackId, zoomEffect]);
+
+	if (!zoomEffect || !bounds || displayedDuration <= 0) {
+		return null;
+	}
+
+	if (!isSelected) {
+		return null;
+	}
+
+	const definition = getEffect({ effectType: zoomEffect.type });
+	const entryPercent = clamp((bounds.entrySeconds / displayedDuration) * 100, 0, 100);
+	const exitPercent = clamp((bounds.exitSeconds / displayedDuration) * 100, 0, 100);
+	const rightStartPercent = clamp(100 - exitPercent, 0, 100);
+	const canShowLabels = entryPercent >= 8 || exitPercent >= 8;
+
+	return (
+		<div
+			ref={containerRef}
+			className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-sm"
+		>
+			<div className="absolute left-1 right-1 top-1/2 h-4 -translate-y-1/2 rounded-md ring-1 ring-cyan-300/35 ring-inset" />
+			<div
+				className="absolute left-0 top-1/2 h-4 -translate-y-1/2 rounded-l-md bg-cyan-400/16"
+				style={{ width: `${entryPercent}%` }}
+			/>
+			<div
+				className="absolute top-1/2 h-4 -translate-y-1/2 rounded-r-md bg-cyan-400/16"
+				style={{ left: `${rightStartPercent}%`, width: `${exitPercent}%` }}
+			/>
+			<div className="absolute inset-x-2 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-black/18">
+				<div
+					className="absolute left-0 top-0 h-full rounded-full bg-cyan-300/95 shadow-[0_0_8px_rgba(34,211,238,0.25)]"
+					style={{ width: `${entryPercent}%` }}
+				/>
+				<div
+					className="absolute top-0 h-full rounded-full bg-cyan-300/95 shadow-[0_0_8px_rgba(34,211,238,0.25)]"
+					style={{ left: `${rightStartPercent}%`, width: `${exitPercent}%` }}
+				/>
+			</div>
+			<div
+				className="absolute top-1/2 h-5 w-px -translate-y-1/2 bg-cyan-100/90 shadow-[0_0_0_1px_rgba(0,0,0,0.18)]"
+				style={{ left: `${entryPercent}%` }}
+			/>
+			<div
+				className="absolute top-1/2 h-5 w-px -translate-y-1/2 bg-cyan-100/90 shadow-[0_0_0_1px_rgba(0,0,0,0.18)]"
+				style={{ left: `${rightStartPercent}%` }}
+			/>
+			{canShowLabels && (
+				<>
+					{entryPercent >= 10 && (
+						<div className="absolute left-1.5 top-0.5 rounded-md border border-cyan-300/45 bg-black/55 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-cyan-100 backdrop-blur-sm">
+							In
+						</div>
+					)}
+					{exitPercent >= 10 && (
+						<div className="absolute right-1.5 top-0.5 rounded-md border border-cyan-300/45 bg-black/55 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-cyan-100 backdrop-blur-sm">
+							Out
+						</div>
+					)}
+				</>
+			)}
+			<button
+				type="button"
+				className="pointer-events-auto absolute top-1/2 h-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize"
+				style={{ left: `${entryPercent}%`, width: `${ZOOM_EASE_HANDLE_HIT_WIDTH_PX}px` }}
+				onMouseDown={(event) => {
+					event.stopPropagation();
+					event.preventDefault();
+					setDragSide("left");
+				}}
+				aria-label={`${definition.name} ease in handle`}
+			>
+				<span className="pointer-events-none absolute left-1/2 top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100 bg-cyan-300 shadow-[0_0_0_2px_rgba(8,15,25,0.35)]" />
+			</button>
+			<button
+				type="button"
+				className="pointer-events-auto absolute top-1/2 h-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize"
+				style={{ left: `${rightStartPercent}%`, width: `${ZOOM_EASE_HANDLE_HIT_WIDTH_PX}px` }}
+				onMouseDown={(event) => {
+					event.stopPropagation();
+					event.preventDefault();
+					setDragSide("right");
+				}}
+				aria-label={`${definition.name} ease out handle`}
+			>
+				<span className="pointer-events-none absolute left-1/2 top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100 bg-cyan-300 shadow-[0_0_0_2px_rgba(8,15,25,0.35)]" />
+			</button>
+		</div>
 	);
 }
 
@@ -922,15 +1304,24 @@ const ELEMENT_CONTENT_RENDERERS: Record<
 			</div>
 		);
 	},
-	effect: ({ element }) => (
-		<div className="flex size-full items-center justify-start gap-1 pl-2">
-			<HugeiconsIcon
-				icon={MagicWand05Icon}
-				className="size-4 shrink-0 text-white"
-			/>
-			<span className="truncate text-xs text-white ml-1">{element.name}</span>
-		</div>
-	),
+	effect: ({ element, isSelected }) => {
+		const shouldHideLabel =
+			(element as EffectElement).effectType === "zoom" && isSelected;
+
+		return (
+			<div className="flex size-full items-center justify-start gap-1 pl-2">
+				{!shouldHideLabel && (
+					<>
+						<HugeiconsIcon
+							icon={MagicWand05Icon}
+							className="size-4 shrink-0 text-white"
+						/>
+						<span className="truncate text-xs text-white ml-1">{element.name}</span>
+					</>
+				)}
+			</div>
+		);
+	},
 	sticker: ({ element }) => {
 		const stickerElement = element as Extract<
 			TimelineElementType,
