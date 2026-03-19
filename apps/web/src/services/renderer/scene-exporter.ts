@@ -33,6 +33,20 @@ const qualityMap = {
 	very_high: QUALITY_VERY_HIGH,
 };
 
+function resolveExportDimension({
+	value,
+	format,
+}: {
+	value: number;
+	format: ExportFormat;
+}): number {
+	const normalizedValue = Math.max(1, Math.round(value));
+	if (format !== "mp4") {
+		return normalizedValue;
+	}
+	return Math.max(2, Math.round(normalizedValue / 2) * 2);
+}
+
 export type SceneExporterEvents = {
 	progress: [progress: number];
 	complete: [buffer: ArrayBuffer];
@@ -59,9 +73,11 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		audioBuffer,
 	}: ExportParams) {
 		super();
+		const exportWidth = resolveExportDimension({ value: width, format });
+		const exportHeight = resolveExportDimension({ value: height, format });
 		this.renderer = new CanvasRenderer({
-			width,
-			height,
+			width: exportWidth,
+			height: exportHeight,
 			fps,
 		});
 
