@@ -4,6 +4,99 @@ import type { EffectParamValues, ZoomEffectTransition } from "@/types/effects";
 import { createOffscreenCanvas } from "./canvas-utils";
 import { webglEffectRenderer } from "./webgl-effect-renderer";
 
+const ZOOM_EDGE_PADDING_PX = 4;
+
+function createEdgeExtendedSource({
+	source,
+	width,
+	height,
+	padding,
+}: {
+	source: CanvasImageSource;
+	width: number;
+	height: number;
+	padding: number;
+}): CanvasImageSource {
+	if (padding <= 0) {
+		return source;
+	}
+
+	const paddedCanvas = createOffscreenCanvas({
+		width: width + padding * 2,
+		height: height + padding * 2,
+	});
+	const paddedContext = paddedCanvas.getContext("2d") as
+		| CanvasRenderingContext2D
+		| OffscreenCanvasRenderingContext2D
+		| null;
+	if (!paddedContext) {
+		return source;
+	}
+
+	paddedContext.imageSmoothingEnabled = true;
+	paddedContext.drawImage(source, padding, padding, width, height);
+	paddedContext.drawImage(source, 0, 0, width, 1, padding, 0, width, padding);
+	paddedContext.drawImage(
+		source,
+		0,
+		height - 1,
+		width,
+		1,
+		padding,
+		padding + height,
+		width,
+		padding,
+	);
+	paddedContext.drawImage(source, 0, 0, 1, height, 0, padding, padding, height);
+	paddedContext.drawImage(
+		source,
+		width - 1,
+		0,
+		1,
+		height,
+		padding + width,
+		padding,
+		padding,
+		height,
+	);
+	paddedContext.drawImage(source, 0, 0, 1, 1, 0, 0, padding, padding);
+	paddedContext.drawImage(
+		source,
+		width - 1,
+		0,
+		1,
+		1,
+		padding + width,
+		0,
+		padding,
+		padding,
+	);
+	paddedContext.drawImage(
+		source,
+		0,
+		height - 1,
+		1,
+		1,
+		0,
+		padding + height,
+		padding,
+		padding,
+	);
+	paddedContext.drawImage(
+		source,
+		width - 1,
+		height - 1,
+		1,
+		1,
+		padding + width,
+		padding + height,
+		padding,
+		padding,
+	);
+
+	return paddedCanvas;
+}
+
 function resolveZoomGeometry({
   width,
   height,
@@ -158,11 +251,18 @@ function applyZoomCpuEffect({
     return source;
   }
 
+  const paddedSource = createEdgeExtendedSource({
+    source,
+    width,
+    height,
+    padding: ZOOM_EDGE_PADDING_PX,
+  });
+
   zoomContext.imageSmoothingEnabled = true;
   zoomContext.drawImage(
-    source,
-    geometry.focusPixelX - geometry.focusPixelX / geometry.scale,
-    geometry.focusPixelY - geometry.focusPixelY / geometry.scale,
+    paddedSource,
+    ZOOM_EDGE_PADDING_PX + geometry.focusPixelX - geometry.focusPixelX / geometry.scale,
+    ZOOM_EDGE_PADDING_PX + geometry.focusPixelY - geometry.focusPixelY / geometry.scale,
     width / geometry.scale,
     height / geometry.scale,
     0,
