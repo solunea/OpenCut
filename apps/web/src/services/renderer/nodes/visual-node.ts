@@ -94,6 +94,115 @@ function clampNumber({
 	return Math.min(Math.max(value, min), max);
 }
 
+function resolveTiltCanvasPadding({
+	effects,
+	animations,
+	localTime,
+	duration,
+	cursorTracking,
+	sourceTime,
+	contentWidth,
+	contentHeight,
+}: {
+	effects: Effect[];
+	animations?: ElementAnimations;
+	localTime: number;
+	duration: number;
+	cursorTracking?: CursorTrackingData;
+	sourceTime?: number;
+	contentWidth: number;
+	contentHeight: number;
+}): { x: number; y: number } {
+	let paddingX = 0;
+	let paddingY = 0;
+
+	for (const effect of effects) {
+		if (!effect.enabled || effect.type !== "zoom") {
+			continue;
+		}
+
+		const effectParams = resolveEffectParamsAtTime({
+			effect,
+			animations,
+			localTime,
+		});
+		const progress = duration <= 0 ? 1 : Math.min(localTime / duration, 1);
+		const renderState = resolveZoomRenderState({
+			effectParams,
+			progress,
+			duration,
+			cursorTracking,
+			sourceTime,
+		});
+
+		if (renderState.keepFrameFixed) {
+			continue;
+		}
+
+		if (
+			Math.abs(renderState.tiltX) <= 0.0001 &&
+			Math.abs(renderState.tiltY) <= 0.0001 &&
+			Math.abs(renderState.rotationX) <= 0.0001 &&
+			renderState.perspective <= 0.0001
+		) {
+			continue;
+		}
+
+		const strength = renderState.strength;
+		const tiltX = Math.abs(renderState.tiltX) * strength;
+		const tiltY = Math.abs(renderState.tiltY) * strength;
+		const rotation = (Math.abs(renderState.rotationX) / 25) * strength;
+		const perspective = renderState.perspective * strength;
+		const base = Math.max(contentWidth, contentHeight);
+
+		paddingX = Math.max(
+			paddingX,
+			Math.ceil(base * (tiltY * 0.2 + tiltX * 0.08 + perspective * 0.18 + rotation * 0.12) + 2),
+		);
+		paddingY = Math.max(
+			paddingY,
+			Math.ceil(base * (tiltX * 0.2 + tiltY * 0.08 + perspective * 0.18 + rotation * 0.12) + 2),
+		);
+	}
+
+	return { x: paddingX, y: paddingY };
+}
+
+function padZoomEffectParamsForExpandedCanvas({
+	effectParams,
+	paddingX,
+	paddingY,
+	contentWidth,
+	contentHeight,
+}: {
+	effectParams: Record<string, number | string | boolean>;
+	paddingX: number;
+	paddingY: number;
+	contentWidth: number;
+	contentHeight: number;
+}): Record<string, number | string | boolean> {
+	if (paddingX <= 0 && paddingY <= 0) {
+		return effectParams;
+	}
+
+	const expandedWidth = contentWidth + paddingX * 2;
+	const expandedHeight = contentHeight + paddingY * 2;
+	const focusX =
+		typeof effectParams.focusX === "number" && Number.isFinite(effectParams.focusX)
+			? effectParams.focusX
+			: 50;
+	const focusY =
+		typeof effectParams.focusY === "number" && Number.isFinite(effectParams.focusY)
+			? effectParams.focusY
+			: 50;
+
+	return {
+		...effectParams,
+		focusX: ((paddingX + contentWidth * (focusX / 100)) / Math.max(expandedWidth, 1)) * 100,
+		focusY: ((paddingY + contentHeight * (focusY / 100)) / Math.max(expandedHeight, 1)) * 100,
+	};
+}
+
 function resolveZoomFrameStyleState({
 	effects,
 	animations,
@@ -253,11 +362,19 @@ function applyRoundedMask({
 	width,
 	height,
 	cornerRadius,
+	maskX = 0,
+	maskY = 0,
+	maskWidth = width,
+	maskHeight = height,
 }: {
 	source: CanvasImageSource;
 	width: number;
 	height: number;
 	cornerRadius: number;
+	maskX?: number;
+	maskY?: number;
+	maskWidth?: number;
+	maskHeight?: number;
 }): CanvasImageSource {
 	if (cornerRadius <= 0) {
 		return source;
@@ -270,9 +387,9 @@ function applyRoundedMask({
 	}
 
 	const percent = Math.min(Math.max(cornerRadius, 0), 100) / 100;
-	const radius = Math.min(width, height) * 0.5 * percent;
+	const radius = Math.min(maskWidth, maskHeight) * 0.5 * percent;
 	maskedCtx.beginPath();
-	maskedCtx.roundRect(0, 0, width, height, radius);
+	maskedCtx.roundRect(maskX, maskY, maskWidth, maskHeight, radius);
 	maskedCtx.clip();
 	maskedCtx.drawImage(source, 0, 0, width, height);
 	return maskedCanvas;
@@ -280,24 +397,28 @@ function applyRoundedMask({
 
 function drawFrameShape({
 	context,
+	x = 0,
+	y = 0,
 	width,
 	height,
 	cornerRadius,
 }: {
 	context: RenderableContext;
+	x?: number;
+	y?: number;
 	width: number;
 	height: number;
 	cornerRadius: number;
 }): void {
 	context.beginPath();
 	if (cornerRadius <= 0) {
-		context.rect(0, 0, width, height);
+		context.rect(x, y, width, height);
 		return;
 	}
 
 	const percent = Math.min(Math.max(cornerRadius, 0), 100) / 100;
 	const radius = Math.min(width, height) * 0.5 * percent;
-	context.roundRect(0, 0, width, height, radius);
+	context.roundRect(x, y, width, height, radius);
 }
 
 function drawStaticFrameShadow({
@@ -491,6 +612,24 @@ export abstract class VisualNode<
 			frameStyle: baseFrameStyle,
 			zoomFrameState,
 		});
+		const canvasPadding = resolveTiltCanvasPadding({
+			effects: enabledEffects,
+			animations: this.params.animations,
+			localTime: animationLocalTime,
+			duration: this.params.duration,
+			cursorTracking: this.params.cursorTracking,
+			sourceTime: sourceLocalTime,
+			contentWidth: pixelWidth,
+			contentHeight: pixelHeight,
+		});
+		const effectCanvasWidth = pixelWidth + canvasPadding.x * 2;
+		const effectCanvasHeight = pixelHeight + canvasPadding.y * 2;
+		const destinationInsetX = (scaledWidth * canvasPadding.x) / pixelWidth;
+		const destinationInsetY = (scaledHeight * canvasPadding.y) / pixelHeight;
+		const destinationX = x - destinationInsetX;
+		const destinationY = y - destinationInsetY;
+		const destinationWidth = scaledWidth + destinationInsetX * 2;
+		const destinationHeight = scaledHeight + destinationInsetY * 2;
 		const hasRoundedCorners = frameStyle.cornerRadius > 0;
 		const hasShadow =
 			frameStyle.shadowBlur > 0 ||
@@ -519,8 +658,8 @@ export abstract class VisualNode<
 		}
 
 		const elementCanvas = createOffscreenCanvas({
-			width: pixelWidth,
-			height: pixelHeight,
+			width: effectCanvasWidth,
+			height: effectCanvasHeight,
 		});
 		const elementCtx = elementCanvas.getContext("2d") as RenderableContext | null;
 		if (!elementCtx) {
@@ -529,7 +668,13 @@ export abstract class VisualNode<
 			return;
 		}
 
-		elementCtx.drawImage(source, 0, 0, pixelWidth, pixelHeight);
+		elementCtx.drawImage(
+			source,
+			canvasPadding.x,
+			canvasPadding.y,
+			pixelWidth,
+			pixelHeight,
+		);
 
 		let currentResult: CanvasImageSource = elementCanvas;
 		let hasAppliedRoundedMask = false;
@@ -544,10 +689,16 @@ export abstract class VisualNode<
 			});
 			const renderParams =
 				effect.type === "zoom"
-					? resolveZoomEffectParamsForRender({
-							effectParams: resolvedParams,
-							cursorTracking: this.params.cursorTracking,
-							sourceTime: sourceLocalTime,
+					? padZoomEffectParamsForExpandedCanvas({
+							effectParams: resolveZoomEffectParamsForRender({
+								effectParams: resolvedParams,
+								cursorTracking: this.params.cursorTracking,
+								sourceTime: sourceLocalTime,
+							}),
+							paddingX: canvasPadding.x,
+							paddingY: canvasPadding.y,
+							contentWidth: pixelWidth,
+							contentHeight: pixelHeight,
 						})
 					: resolvedParams;
 			const progress =
@@ -578,9 +729,13 @@ export abstract class VisualNode<
 			if (shouldApplyZoomAfterFrameMask && !hasAppliedRoundedMask) {
 				currentResult = applyRoundedMask({
 					source: currentResult,
-					width: pixelWidth,
-					height: pixelHeight,
+					width: effectCanvasWidth,
+					height: effectCanvasHeight,
 					cornerRadius: frameStyle.cornerRadius,
+					maskX: canvasPadding.x,
+					maskY: canvasPadding.y,
+					maskWidth: pixelWidth,
+					maskHeight: pixelHeight,
 				});
 				hasAppliedRoundedMask = true;
 			}
@@ -588,8 +743,8 @@ export abstract class VisualNode<
 			if (effect.type === "custom-cursor") {
 				currentResult = applyCustomCursorEffect({
 					source: currentResult,
-					width: pixelWidth,
-					height: pixelHeight,
+					width: effectCanvasWidth,
+					height: effectCanvasHeight,
 					renderScale: renderer.renderScale,
 					sourceTime: sourceLocalTime,
 					effectParams: renderParams,
@@ -601,8 +756,8 @@ export abstract class VisualNode<
 
 			currentResult = applyRendererEffect({
 				source: currentResult,
-				width: pixelWidth,
-				height: pixelHeight,
+				width: effectCanvasWidth,
+				height: effectCanvasHeight,
 				effectType: effect.type,
 				effectParams: renderParams,
 				localTime: animationLocalTime,
@@ -624,9 +779,13 @@ export abstract class VisualNode<
 			? currentResult
 			: applyRoundedMask({
 					source: currentResult,
-					width: pixelWidth,
-					height: pixelHeight,
+					width: effectCanvasWidth,
+					height: effectCanvasHeight,
 					cornerRadius: frameStyle.cornerRadius,
+					maskX: canvasPadding.x,
+					maskY: canvasPadding.y,
+					maskWidth: pixelWidth,
+					maskHeight: pixelHeight,
 				});
 
 		if (hasKeepFrameFixedZoom) {
@@ -649,15 +808,23 @@ export abstract class VisualNode<
 			}
 
 			renderer.context.save();
-			renderer.context.translate(x, y);
+			renderer.context.translate(destinationX, destinationY);
 			drawFrameShape({
 				context: renderer.context,
+				x: destinationInsetX,
+				y: destinationInsetY,
 				width: scaledWidth,
 				height: scaledHeight,
 				cornerRadius: frameStyle.cornerRadius,
 			});
 			renderer.context.clip();
-			renderer.context.drawImage(currentResult, 0, 0, scaledWidth, scaledHeight);
+			renderer.context.drawImage(
+				currentResult,
+				0,
+				0,
+				destinationWidth,
+				destinationHeight,
+			);
 			renderer.context.restore();
 			renderer.context.restore();
 			return;
@@ -675,10 +842,10 @@ export abstract class VisualNode<
 
 		renderer.context.drawImage(
 			finalResult,
-			x,
-			y,
-			scaledWidth,
-			scaledHeight,
+			destinationX,
+			destinationY,
+			destinationWidth,
+			destinationHeight,
 		);
 		renderer.context.restore();
 	}
