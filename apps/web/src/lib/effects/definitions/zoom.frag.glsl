@@ -45,7 +45,13 @@ void main() {
   sampleOffset.y += rotationY * rotated.x * perspective * 0.08;
   vec2 tiltedCoord = vec2(0.5, 0.5) + sampleOffset;
   vec2 sampleCoord = u_focus + (tiltedCoord - u_focus) / scale;
-  vec4 zoomedColor = texture2D(u_texture, sampleCoord);
+  vec2 texelSize = 1.0 / max(u_resolution, vec2(1.0, 1.0));
+  vec2 clampedSampleCoord = clamp(sampleCoord, vec2(0.0, 0.0), vec2(1.0, 1.0));
+  vec2 inBoundsMin = smoothstep(vec2(-2.0) * texelSize, vec2(0.0, 0.0), sampleCoord);
+  vec2 inBoundsMax = vec2(1.0, 1.0) - smoothstep(vec2(1.0, 1.0), vec2(1.0) + vec2(2.0) * texelSize, sampleCoord);
+  float inBoundsMask = inBoundsMin.x * inBoundsMin.y * inBoundsMax.x * inBoundsMax.y;
+  vec4 zoomedColor = texture2D(u_texture, clampedSampleCoord);
+  zoomedColor *= inBoundsMask;
   float keepFrameFixed = step(0.5, u_keepFrameFixed);
   float opaqueInterior = smoothstep(0.98, 0.999, baseColor.a);
   vec4 keepFrameFixedColor = mix(

@@ -4,7 +4,7 @@ import type { EffectParamValues, ZoomEffectTransition } from "@/types/effects";
 import { createOffscreenCanvas } from "./canvas-utils";
 import { webglEffectRenderer } from "./webgl-effect-renderer";
 
-const ZOOM_EDGE_PADDING_PX = 4;
+const MIN_ZOOM_EDGE_PADDING_PX = 4;
 
 function createEdgeExtendedSource({
 	source,
@@ -95,6 +95,57 @@ function createEdgeExtendedSource({
 	);
 
 	return paddedCanvas;
+}
+
+function resolveZoomEdgePadding({
+	width,
+	height,
+	geometry,
+}: {
+	width: number;
+	height: number;
+	geometry: ReturnType<typeof resolveZoomGeometry>;
+}): number {
+	const corners = [
+		{ x: 0, y: 0 },
+		{ x: width, y: 0 },
+		{ x: 0, y: height },
+		{ x: width, y: height },
+	];
+	let minX = Number.POSITIVE_INFINITY;
+	let minY = Number.POSITIVE_INFINITY;
+	let maxX = Number.NEGATIVE_INFINITY;
+	let maxY = Number.NEGATIVE_INFINITY;
+
+	for (const corner of corners) {
+		const transformedX =
+			geometry.matrixA * corner.x +
+			geometry.matrixC * corner.y +
+			geometry.translateX;
+		const transformedY =
+			geometry.matrixB * corner.x +
+			geometry.matrixD * corner.y +
+			geometry.translateY;
+		minX = Math.min(minX, transformedX);
+		minY = Math.min(minY, transformedY);
+		maxX = Math.max(maxX, transformedX);
+		maxY = Math.max(maxY, transformedY);
+	}
+
+	const horizontalOverflow = Math.max(0, -minX, maxX - width);
+	const verticalOverflow = Math.max(0, -minY, maxY - height);
+	const tiltMagnitude = Math.max(
+		Math.abs(geometry.renderState.tiltX),
+		Math.abs(geometry.renderState.tiltY),
+	);
+	const perspectivePadding =
+		Math.max(width, height) * geometry.renderState.perspective * 0.08;
+	const tiltPadding = Math.max(width, height) * tiltMagnitude * 0.04;
+
+	return Math.max(
+		MIN_ZOOM_EDGE_PADDING_PX,
+		Math.ceil(Math.max(horizontalOverflow, verticalOverflow) + perspectivePadding + tiltPadding + 2),
+	);
 }
 
 function resolveZoomGeometry({
@@ -251,18 +302,24 @@ function applyZoomCpuEffect({
     return source;
   }
 
+  const edgePadding = resolveZoomEdgePadding({
+    width,
+    height,
+    geometry,
+  });
+
   const paddedSource = createEdgeExtendedSource({
     source,
     width,
     height,
-    padding: ZOOM_EDGE_PADDING_PX,
+    padding: edgePadding,
   });
 
   zoomContext.imageSmoothingEnabled = true;
   zoomContext.drawImage(
     paddedSource,
-    ZOOM_EDGE_PADDING_PX + geometry.focusPixelX - geometry.focusPixelX / geometry.scale,
-    ZOOM_EDGE_PADDING_PX + geometry.focusPixelY - geometry.focusPixelY / geometry.scale,
+    edgePadding + geometry.focusPixelX - geometry.focusPixelX / geometry.scale,
+    edgePadding + geometry.focusPixelY - geometry.focusPixelY / geometry.scale,
     width / geometry.scale,
     height / geometry.scale,
     0,
@@ -270,6 +327,13 @@ function applyZoomCpuEffect({
     width,
     height,
   );
+
+  const paddedZoomSource = createEdgeExtendedSource({
+    source: zoomCanvas,
+    width,
+    height,
+    padding: edgePadding,
+  });
 
   context.imageSmoothingEnabled = true;
   context.save();
@@ -281,7 +345,13 @@ function applyZoomCpuEffect({
     geometry.translateX,
     geometry.translateY,
   );
-  context.drawImage(zoomCanvas, 0, 0, width, height);
+  context.drawImage(
+    paddedZoomSource,
+    -edgePadding,
+    -edgePadding,
+    width + edgePadding * 2,
+    height + edgePadding * 2,
+  );
   context.restore();
 
   if (geometry.renderState.keepFrameFixed) {
