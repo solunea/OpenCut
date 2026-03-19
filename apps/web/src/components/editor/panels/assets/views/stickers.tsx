@@ -94,10 +94,10 @@ function StickerGrid({
 		"--sticker-max"?: string;
 	} = {
 		gridTemplateColumns: shouldCapSize
-			? "repeat(auto-fill, minmax(var(--sticker-min, 96px), var(--sticker-max, 160px)))"
-			: "repeat(auto-fit, minmax(var(--sticker-min, 96px), 1fr))",
-		"--sticker-min": "96px",
-		...(shouldCapSize ? { "--sticker-max": "160px" } : {}),
+			? "repeat(auto-fill, minmax(var(--sticker-min, 35px), var(--sticker-max, 60px)))"
+			: "repeat(auto-fit, minmax(var(--sticker-min, 35px), 1fr))",
+		"--sticker-min": "35px",
+		...(shouldCapSize ? { "--sticker-max": "60px" } : {}),
 	};
 
 	return (
