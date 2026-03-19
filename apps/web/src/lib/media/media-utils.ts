@@ -20,6 +20,10 @@ export const getMediaTypeFromFile = ({
 	const { type } = file;
 	const lowerName = file.name.toLowerCase();
 
+	if (lowerName.endsWith(".avf")) {
+		return "video";
+	}
+
 	if (type.startsWith("image/")) {
 		return "image";
 	}
